@@ -1,0 +1,4 @@
+cocotb
+vunit_hdl
+fusesoc
+edalize

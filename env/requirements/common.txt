@@ -1,0 +1,8 @@
+# Onboarding dependencies. Pin/lock these per project before using the image as release evidence.
+pytest
+pytest-timeout
+PyYAML
+jsonschema
+gcovr
+reuse
+cyclonedx-bom

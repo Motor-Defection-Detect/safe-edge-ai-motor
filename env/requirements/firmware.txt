@@ -1,0 +1,6 @@
+west
+platformio
+pyocd
+labgrid
+pyserial
+robotframework

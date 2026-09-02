@@ -1,0 +1,10 @@
+# Onboarding only. Pin versions that match the target runtime before release evidence.
+numpy
+opencv-python-headless
+onnx
+onnxruntime
+scikit-learn
+pandas
+mlflow
+pyserial
+# torch is installed from the CPU wheel index in env/Dockerfile (no CUDA in this image).

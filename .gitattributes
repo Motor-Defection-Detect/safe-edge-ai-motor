@@ -1,0 +1,26 @@
+# The harness runs on POSIX shells and compares generated files byte for byte.
+# LF everywhere keeps scripts executable and interface-contract digests stable
+# regardless of each contributor's core.autocrlf setting.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.h text eol=lf
+*.c text eol=lf
+*.sv text eol=lf
+*.vhd text eol=lf
+*.dtsi text eol=lf
+MANIFEST.sha256 text eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.bin binary
+*.hex binary
+*.elf binary
+*.bit binary
+*.ko binary

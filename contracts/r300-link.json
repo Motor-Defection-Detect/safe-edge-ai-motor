@@ -1,0 +1,1080 @@
+{
+  "schemaVersion": 1,
+  "contractId": "r300_link",
+  "description": "R300 AI Motor cross-profile link contract. Single source of truth for the STM32<->Jetson UART frame, the STM32<->ATmega128A supervised heartbeat, the safety state machine and the pin map. Every consumer file is generated; editing a consumer by hand is a defect even when the value still matches.",
+  "endianness": "little",
+  "protocolVersion": 2,
+  "sources": [
+    "project_file/R300_AI_Motor_Project_Full_Design_v4.pdf section 6.1",
+    "project_file/R300_AI_Motor_Corporate_Engineering_Document_Pack_v1.0.pdf R300-ICD-001 section 4",
+    "project_file/R300_AI_Motor_KiCad_v4/R300_AI_Motor_KiCad_v4/R300_AI_Motor_Pinmap_v4.csv (superseded component wiring)",
+    "hardware/r300-gy521-lr7843-acs712.md"
+  ],
+  "acquisition": {
+    "sampleRateHz": 1000,
+    "channels": [
+      "vib_x",
+      "vib_y",
+      "vib_z",
+      "current"
+    ],
+    "channelUnits": [
+      "MPU-6050 +/-16 g signed count",
+      "MPU-6050 +/-16 g signed count",
+      "MPU-6050 +/-16 g signed count",
+      "mA after motor-off zero calibration"
+    ],
+    "sampleType": "int16",
+    "blockSamples": 128,
+    "windowSamples": 512,
+    "hopSamples": 256,
+    "note": "128 samples at 1000 S/s = 128 ms per frame. A 512-sample window with hop 256 gives a 3.90625 Hz inference refresh and 1.953125 Hz FFT bin spacing."
+  },
+  "uart": {
+    "baud": 921600,
+    "format": "8N1",
+    "rawPayloadBytesPerSecond": 8000,
+    "capacityBytesPerSecond": 92160,
+    "payloadUtilization": 0.087
+  },
+  "diagnosticUart": {
+    "baud": 38400,
+    "format": "8N1",
+    "direction": "ATmega128A USART0 to STM32 USART1",
+    "note": "Read-only safety diagnostics; never relay authority"
+  },
+  "crc": {
+    "name": "CRC-16/CCITT-FALSE",
+    "widthBits": 16,
+    "polynomial": "0x1021",
+    "init": "0xFFFF",
+    "reflectIn": false,
+    "reflectOut": false,
+    "xorOut": "0x0000",
+    "coverage": "sof-through-payload",
+    "resolves": "TBD-001",
+    "decision": "The ICD left polynomial, init, reflection and xorout open. CRC-16/CCITT-FALSE is fixed here because it is table-free on ATmega128A, unambiguous, and has a published check value.",
+    "checkValue": "0x29B1"
+  },
+  "frames": [
+    {
+      "name": "TELEMETRY",
+      "direction": "firmware-to-jetson",
+      "sof": "0xAA55",
+      "headerBytes": 14,
+      "trailerBytes": 2,
+      "variableField": "payload",
+      "fields": [
+        {
+          "name": "sof",
+          "offset": 0,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "constant": "0xAA55",
+          "purpose": "frame sync"
+        },
+        {
+          "name": "version_flags",
+          "offset": 2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "protocol version in bits 7:0, sensor and fault flags in bits 15:8"
+        },
+        {
+          "name": "sequence",
+          "offset": 4,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "monotonic counter; a gap is a packet loss event"
+        },
+        {
+          "name": "timestamp_us",
+          "offset": 8,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "STM32 microsecond counter at the first sample of the block"
+        },
+        {
+          "name": "sample_count",
+          "offset": 12,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "samples per channel in this frame; nominal 128"
+        },
+        {
+          "name": "payload",
+          "offset": 14,
+          "sizeBytes": 0,
+          "type": "int16[]",
+          "purpose": "sample_count groups of vib_x, vib_y, vib_z, current interleaved"
+        },
+        {
+          "name": "crc16",
+          "offset": -2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "CRC over sof through payload inclusive"
+        }
+      ]
+    },
+    {
+      "name": "HEALTH",
+      "direction": "jetson-to-firmware",
+      "sof": "0xAA55",
+      "headerBytes": 14,
+      "trailerBytes": 2,
+      "variableField": null,
+      "fields": [
+        {
+          "name": "sof",
+          "offset": 0,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "constant": "0xAA55",
+          "purpose": "frame sync"
+        },
+        {
+          "name": "version_flags",
+          "offset": 2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "protocol version in bits 7:0, reserved in bits 15:8"
+        },
+        {
+          "name": "sequence",
+          "offset": 4,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "monotonic counter"
+        },
+        {
+          "name": "timestamp_ms",
+          "offset": 8,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "Jetson monotonic milliseconds"
+        },
+        {
+          "name": "health_flags",
+          "offset": 12,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "bit0 app_alive, bit1 model_loaded, bit2 inference_ok, bit3 storage_ok"
+        },
+        {
+          "name": "crc16",
+          "offset": 14,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "CRC over sof through health_flags inclusive"
+        }
+      ]
+    },
+    {
+      "name": "MOTOR_COMMAND",
+      "direction": "jetson-to-firmware",
+      "sof": "0xC33C",
+      "headerBytes": 16,
+      "trailerBytes": 2,
+      "variableField": null,
+      "fields": [
+        {
+          "name": "sof",
+          "offset": 0,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "constant": "0xC33C",
+          "purpose": "command sync distinct from telemetry and health"
+        },
+        {
+          "name": "version_flags",
+          "offset": 2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "protocol version in bits 7:0, reserved in bits 15:8"
+        },
+        {
+          "name": "sequence",
+          "offset": 4,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "monotonic command counter"
+        },
+        {
+          "name": "timestamp_ms",
+          "offset": 8,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "Jetson monotonic milliseconds"
+        },
+        {
+          "name": "duty_permille",
+          "offset": 12,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "requested TIM4 duty from 0 through 1000 permille"
+        },
+        {
+          "name": "direction",
+          "offset": 14,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "0 STOP or 1 FORWARD; reverse is excluded by the v4 one-direction pin map"
+        },
+        {
+          "name": "crc16",
+          "offset": 16,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "CRC over sof through direction inclusive"
+        }
+      ]
+    },
+    {
+      "name": "STM_DIAGNOSTIC",
+      "direction": "firmware-to-jetson",
+      "sof": "0xD44D",
+      "headerBytes": 82,
+      "trailerBytes": 2,
+      "variableField": null,
+      "fields": [
+        {
+          "name": "sof",
+          "offset": 0,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "constant": "0xD44D",
+          "purpose": "diagnostic sync distinct from telemetry"
+        },
+        {
+          "name": "version_flags",
+          "offset": 2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "protocol version in bits 7:0, reserved in bits 15:8"
+        },
+        {
+          "name": "sequence",
+          "offset": 4,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "monotonic diagnostic counter"
+        },
+        {
+          "name": "timestamp_ms",
+          "offset": 8,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "STM32 monotonic milliseconds"
+        },
+        {
+          "name": "telemetry_sequence",
+          "offset": 12,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "next telemetry sequence number"
+        },
+        {
+          "name": "dropped_blocks",
+          "offset": 16,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "acquisition blocks dropped before transmission"
+        },
+        {
+          "name": "invalid_health_frames",
+          "offset": 20,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "invalid Jetson HEALTH frames"
+        },
+        {
+          "name": "invalid_health_crc_frames",
+          "offset": 24,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "HEALTH frames rejected specifically for CRC"
+        },
+        {
+          "name": "sensor_overruns",
+          "offset": 28,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "vibration samples overwritten before block commit"
+        },
+        {
+          "name": "platform_vibration_overruns",
+          "offset": 32,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "MPU-6050 data-ready events overwritten before I2C service"
+        },
+        {
+          "name": "platform_adc_overruns",
+          "offset": 36,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "ADC DMA ring overwritten before main-loop ownership polling"
+        },
+        {
+          "name": "sensor_bus_errors",
+          "offset": 40,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "I2C sensor-bus timeout or transfer failures"
+        },
+        {
+          "name": "uart_errors",
+          "offset": 44,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "Jetson UART or TX DMA failures"
+        },
+        {
+          "name": "avr_uart_errors",
+          "offset": 48,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "AVR diagnostic UART failures"
+        },
+        {
+          "name": "adc_dma_errors",
+          "offset": 52,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "current ADC DMA error state"
+        },
+        {
+          "name": "uart_dma_errors",
+          "offset": 56,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "Jetson UART RX or telemetry TX DMA error state"
+        },
+        {
+          "name": "adc_peripheral_errors",
+          "offset": 60,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "ADC peripheral overrun state"
+        },
+        {
+          "name": "uart_busy_events",
+          "offset": 64,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "transmit requests delayed by an active DMA frame"
+        },
+        {
+          "name": "invalid_avr_diag_frames",
+          "offset": 68,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "invalid AVR diagnostic frames"
+        },
+        {
+          "name": "invalid_motor_command_frames",
+          "offset": 72,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "invalid Jetson MOTOR_COMMAND frames"
+        },
+        {
+          "name": "current_zero_count",
+          "offset": 76,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "motor-off ADC zero calibration used for the current mA conversion"
+        },
+        {
+          "name": "buffered_samples",
+          "offset": 78,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "samples currently retained in the acquisition block"
+        },
+        {
+          "name": "status_flags",
+          "offset": 80,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "STM32 supervision bits 0:3 and fresh bridged AVR live-status bits 4:9"
+        },
+        {
+          "name": "crc16",
+          "offset": 82,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "CRC over all diagnostic fields"
+        }
+      ]
+    },
+    {
+      "name": "AVR_DIAGNOSTIC",
+      "direction": "safety-to-firmware",
+      "sof": "0x5AA5",
+      "headerBytes": 14,
+      "trailerBytes": 2,
+      "variableField": null,
+      "fields": [
+        {
+          "name": "sof",
+          "offset": 0,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "constant": "0x5AA5",
+          "purpose": "diagnostic frame sync distinct from the Jetson link"
+        },
+        {
+          "name": "version_flags",
+          "offset": 2,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "protocol version in bits 7:0 and live safety input/output flags in bits 15:8"
+        },
+        {
+          "name": "sequence",
+          "offset": 4,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "monotonic diagnostic counter"
+        },
+        {
+          "name": "timestamp_ms",
+          "offset": 8,
+          "sizeBytes": 4,
+          "type": "uint32",
+          "purpose": "ATmega128A monotonic milliseconds"
+        },
+        {
+          "name": "state_cause",
+          "offset": 12,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "safety state in bits 7:0 and latched trip cause in bits 15:8"
+        },
+        {
+          "name": "crc16",
+          "offset": 14,
+          "sizeBytes": 2,
+          "type": "uint16",
+          "purpose": "CRC over sof through state_cause inclusive"
+        }
+      ]
+    }
+  ],
+  "healthFlags": [
+    {
+      "name": "APP_ALIVE",
+      "bit": 0
+    },
+    {
+      "name": "MODEL_LOADED",
+      "bit": 1
+    },
+    {
+      "name": "INFERENCE_OK",
+      "bit": 2
+    },
+    {
+      "name": "STORAGE_OK",
+      "bit": 3
+    },
+    {
+      "name": "LINK_HEALTHY",
+      "bit": 4,
+      "purpose": "the Jetson received a validated STM32 TELEMETRY frame within two frame periods"
+    }
+  ],
+  "telemetryFlags": [
+    {
+      "name": "SENSOR_READY",
+      "bit": 0,
+      "purpose": "MPU-6050 and ACS712 acquisition are calibrated and ready"
+    },
+    {
+      "name": "LOCAL_FAULT",
+      "bit": 1,
+      "purpose": "a sticky local acquisition, peripheral or buffer fault is present"
+    },
+    {
+      "name": "MOTOR_ACTIVE",
+      "bit": 2,
+      "purpose": "the requested PWM duty is non-zero; this is not relay feedback"
+    },
+    {
+      "name": "AVR_DIAG_VALID",
+      "bit": 3,
+      "purpose": "a fresh CRC-valid AVR diagnostic frame is available"
+    },
+    {
+      "name": "AVR_ARMED",
+      "bit": 4,
+      "purpose": "the diagnostic safety state is ARMED"
+    },
+    {
+      "name": "AVR_TRIPPED",
+      "bit": 5,
+      "purpose": "the diagnostic safety state is TRIPPED"
+    },
+    {
+      "name": "AVR_ESTOP",
+      "bit": 6,
+      "purpose": "the latched diagnostic trip cause is E-stop"
+    },
+    {
+      "name": "AVR_HEARTBEAT_TIMEOUT",
+      "bit": 7,
+      "purpose": "the latched diagnostic trip cause is heartbeat timeout"
+    }
+  ],
+  "telemetryStatusRules": [
+    "Reserved status bits are rejected.",
+    "AVR state and cause bits require AVR_DIAG_VALID.",
+    "AVR_ARMED and AVR_TRIPPED are mutually exclusive.",
+    "AVR_ESTOP and AVR_HEARTBEAT_TIMEOUT are mutually exclusive and require AVR_TRIPPED.",
+    "MOTOR_ACTIVE requires SENSOR_READY without LOCAL_FAULT."
+  ],
+  "avrDiagnosticFlags": [
+    {
+      "name": "HEARTBEAT_HEALTHY",
+      "bit": 0,
+      "purpose": "two supervised heartbeat edges have been observed and the latest edge is within timeout"
+    },
+    {
+      "name": "ARM_ACTIVE",
+      "bit": 1,
+      "purpose": "the debounced ARM input is active and the raw input has not released"
+    },
+    {
+      "name": "ESTOP_ACTIVE",
+      "bit": 2,
+      "purpose": "the raw or debounced E-stop input is active"
+    },
+    {
+      "name": "INTERNAL_HEALTHY",
+      "bit": 3,
+      "purpose": "the AVR application reports no internal fault"
+    },
+    {
+      "name": "RELAY_COMMAND",
+      "bit": 4,
+      "purpose": "the AVR is commanding its relay output active; this is not contact feedback"
+    }
+  ],
+  "stmDiagnosticFlags": [
+    {
+      "name": "KEEPALIVE_VALID",
+      "bit": 0,
+      "purpose": "a fresh CRC-valid Jetson HEALTH frame explicitly reports LINK_HEALTHY"
+    },
+    {
+      "name": "ACQUISITION_OVERRUN",
+      "bit": 1,
+      "purpose": "the acquisition block has overrun"
+    },
+    {
+      "name": "LOCAL_HEALTHY",
+      "bit": 2,
+      "purpose": "the local acquisition path is healthy"
+    },
+    {
+      "name": "HEARTBEAT_LEVEL",
+      "bit": 3,
+      "purpose": "the current supervised heartbeat GPIO command level"
+    },
+    {
+      "name": "AVR_DIAG_VALID",
+      "bit": 4,
+      "purpose": "the bridged AVR live status is from a fresh CRC-valid diagnostic frame"
+    },
+    {
+      "name": "AVR_HEARTBEAT_HEALTHY",
+      "bit": 5,
+      "purpose": "the AVR currently considers the supervised heartbeat healthy"
+    },
+    {
+      "name": "AVR_ARM_ACTIVE",
+      "bit": 6,
+      "purpose": "the AVR currently sees its ARM input active"
+    },
+    {
+      "name": "AVR_ESTOP_ACTIVE",
+      "bit": 7,
+      "purpose": "the AVR currently sees its E-stop input active"
+    },
+    {
+      "name": "AVR_INTERNAL_HEALTHY",
+      "bit": 8,
+      "purpose": "the AVR application currently reports no internal fault"
+    },
+    {
+      "name": "AVR_RELAY_COMMAND",
+      "bit": 9,
+      "purpose": "the AVR currently commands its relay output active; this is not contact feedback"
+    }
+  ],
+  "timing": [
+    {
+      "name": "HEARTBEAT_TOGGLE_MS",
+      "value": 100,
+      "owner": "stm32",
+      "purpose": "PB8 toggle period while the Jetson link and local acquisition are both healthy"
+    },
+    {
+      "name": "HEARTBEAT_TIMEOUT_MS",
+      "value": 500,
+      "owner": "avr",
+      "purpose": "the AVR trips the relay when no heartbeat edge arrives within this window"
+    },
+    {
+      "name": "JETSON_KEEPALIVE_TIMEOUT_MS",
+      "value": 180,
+      "owner": "stm32",
+      "purpose": "one missed 100 ms HEALTH plus 80 ms jitter stops PB8; combined with the 500 ms AVR timeout this leaves 20 ms of the 700 ms target for relay response"
+    },
+    {
+      "name": "JETSON_LINK_HEALTHY_MAX_AGE_MS",
+      "value": 128,
+      "owner": "jetson",
+      "purpose": "one 128 ms TELEMETRY period may elapse before HEALTH clears LINK_HEALTHY"
+    },
+    {
+      "name": "INFERENCE_WORKER_STALL_MS",
+      "value": 100,
+      "owner": "jetson",
+      "purpose": "clear LINK_HEALTHY when one inference or presentation callback exceeds the application-liveness deadline"
+    },
+    {
+      "name": "INFERENCE_P95_TARGET_MS",
+      "value": 30,
+      "owner": "jetson",
+      "purpose": "target p95 model callback latency on the deployed Jetson"
+    },
+    {
+      "name": "PACKET_TO_UI_P95_TARGET_MS",
+      "value": 100,
+      "owner": "jetson",
+      "purpose": "target p95 from validated packet receipt to Qt render"
+    },
+    {
+      "name": "CONDITION_WARNING_TARGET_MS",
+      "value": 1500,
+      "owner": "jetson",
+      "purpose": "target from a persistent abnormal condition to advisory WARNING"
+    },
+    {
+      "name": "UI_HEARTBEAT_TIMEOUT_MS",
+      "value": 300,
+      "owner": "jetson",
+      "purpose": "clear LINK_HEALTHY when a bound Qt main loop misses three 100 ms refresh heartbeats"
+    },
+    {
+      "name": "AVR_WATCHDOG_TIMEOUT_MS",
+      "value": 500,
+      "owner": "avr",
+      "purpose": "reset a stalled safety main loop early enough to preserve the 700 ms relay-off target"
+    },
+    {
+      "name": "AVR_RESET_TO_SAFE_MS",
+      "value": 700,
+      "owner": "avr",
+      "purpose": "worst case reset to relay OFF budget"
+    },
+    {
+      "name": "SUPERVISION_FAILURE_TO_RELAY_TARGET_MS",
+      "value": 700,
+      "owner": "system",
+      "purpose": "target from Jetson or link supervision failure to physical relay OFF; physical response requires HIL measurement"
+    },
+    {
+      "name": "FRAME_PERIOD_MS",
+      "value": 128,
+      "owner": "stm32",
+      "purpose": "128 samples at 1000 S/s"
+    },
+    {
+      "name": "INPUT_DEBOUNCE_MS",
+      "value": 20,
+      "owner": "avr",
+      "purpose": "ARM and E-stop debounce window"
+    },
+    {
+      "name": "AVR_DIAGNOSTIC_PERIOD_MS",
+      "value": 100,
+      "owner": "avr",
+      "purpose": "non-blocking safety diagnostic publication period"
+    },
+    {
+      "name": "AVR_DIAGNOSTIC_TIMEOUT_MS",
+      "value": 300,
+      "owner": "stm32",
+      "purpose": "maximum age for exposing AVR diagnostic status to Jetson"
+    },
+    {
+      "name": "STM_DIAGNOSTIC_PERIOD_MS",
+      "value": 1000,
+      "owner": "stm32",
+      "purpose": "read-only STM32 reliability counter publication period"
+    },
+    {
+      "name": "STM_DIAGNOSTIC_TIMEOUT_MS",
+      "value": 3000,
+      "owner": "jetson",
+      "purpose": "maximum age for presenting STM32 reliability counters"
+    },
+    {
+      "name": "MOTOR_COMMAND_PERIOD_MS",
+      "value": 100,
+      "owner": "jetson",
+      "purpose": "periodic refresh of the latest operator or experiment motor request"
+    },
+    {
+      "name": "MOTOR_COMMAND_TIMEOUT_MS",
+      "value": 300,
+      "owner": "stm32",
+      "purpose": "fail-safe PWM stop when no fresh valid motor request is received"
+    }
+  ],
+  "motorDirections": [
+    {
+      "name": "STOP",
+      "value": 0,
+      "purpose": "both bridge inputs low"
+    },
+    {
+      "name": "FORWARD",
+      "value": 1,
+      "purpose": "PB6 PWM with PB7 held low"
+    }
+  ],
+  "safetyStates": [
+    {
+      "name": "DISARMED",
+      "value": 0,
+      "relay": "off",
+      "purpose": "power-on and post-reset state"
+    },
+    {
+      "name": "ARMED",
+      "value": 1,
+      "relay": "on",
+      "purpose": "manual ARM asserted AND heartbeat healthy AND E-stop inactive AND no internal fault"
+    },
+    {
+      "name": "TRIPPED",
+      "value": 2,
+      "relay": "off",
+      "purpose": "latched; requires manual re-arm"
+    }
+  ],
+  "tripCauses": [
+    {
+      "name": "NONE",
+      "value": 0
+    },
+    {
+      "name": "HEARTBEAT_TIMEOUT",
+      "value": 1
+    },
+    {
+      "name": "ESTOP",
+      "value": 2
+    },
+    {
+      "name": "INTERNAL_FAULT",
+      "value": 3
+    },
+    {
+      "name": "RESET",
+      "value": 4
+    }
+  ],
+  "signals": [
+    {
+      "name": "HEARTBEAT",
+      "fromBoard": "STM32F411",
+      "fromPin": "PB8",
+      "toBoard": "ATmega128A",
+      "toPin": "PE4",
+      "toInterrupt": "INT4",
+      "trigger": "both",
+      "logicLevel": "3.3V push-pull into a 5V input",
+      "note": "Supervised. AVR PE4 internal pull-up prevents a floating input while STM32 PB8 is high-impedance at reset. Toggled only while the Jetson keepalive and local acquisition health are both valid. An unconditional timer toggle would not detect Jetson failure and is forbidden."
+    },
+    {
+      "name": "ESTOP",
+      "fromBoard": "SW2",
+      "fromPin": "switch",
+      "toBoard": "ATmega128A",
+      "toPin": "PD6",
+      "toInterrupt": null,
+      "trigger": "level-low",
+      "logicLevel": "5V with internal pull-up, switch to GND",
+      "note": "Prototype input. Real machinery requires a certified E-stop and safety relay."
+    },
+    {
+      "name": "ARM",
+      "fromBoard": "SW1",
+      "fromPin": "momentary",
+      "toBoard": "ATmega128A",
+      "toPin": "PD5",
+      "toInterrupt": null,
+      "trigger": "falling",
+      "logicLevel": "5V with internal pull-up, switch to GND",
+      "note": "Manual re-arm only. Never asserted by software."
+    },
+    {
+      "name": "RELAY",
+      "fromBoard": "ATmega128A",
+      "fromPin": "PD7",
+      "toBoard": "K1",
+      "toPin": "IN",
+      "toInterrupt": null,
+      "trigger": "level-high",
+      "logicLevel": "5V logic",
+      "note": "R2 bias must hold the relay de-energized while PD7 is tri-stated during reset. Trigger polarity must be measured before motor power is applied."
+    }
+  ],
+  "pins": [
+    {
+      "board": "STM32F411",
+      "pin": "PB10",
+      "function": "I2C2_SCL",
+      "connectsTo": "GY-521 SCL",
+      "level": "3.3V",
+      "note": "AF4 open-drain; use the module pull-up only if it is tied to 3.3V"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PB11",
+      "function": "I2C2_SDA",
+      "connectsTo": "GY-521 SDA",
+      "level": "3.3V",
+      "note": "AF4 open-drain; keep the cable short"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PB1",
+      "function": "EXTI1",
+      "connectsTo": "GY-521 INT",
+      "level": "3.3V",
+      "note": "MPU-6050 data-ready rising edge"
+    },
+    {
+      "board": "GY-521",
+      "pin": "AD0",
+      "function": "I2C_ADDRESS_SELECT",
+      "connectsTo": "GND",
+      "level": "3.3V",
+      "note": "selects MPU-6050 address 0x68"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PA0",
+      "function": "ADC1_IN0",
+      "connectsTo": "ACS712 OUT via 12k series and 22k to GND",
+      "level": "0-3.3V analog",
+      "note": "ADC DMA; add 100nF PA0-to-GND; divider limits a 5V output to 3.24V"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PB6",
+      "function": "TIM4_CH1",
+      "connectsTo": "LR7843 module PWM/IN",
+      "level": "3.3V PWM",
+      "note": "1kHz active-high; selected LR7843 module accepts 3.3V input"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PB7",
+      "function": "GPIO_OUT",
+      "connectsTo": "NC",
+      "level": "3.3V",
+      "note": "held LOW; LR7843 is a one-direction low-side switch, not an H-bridge"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PA2",
+      "function": "USART2_TX",
+      "connectsTo": "Jetson J12 pin 10 RX",
+      "level": "3.3V TTL",
+      "note": "921600 8N1, TELEMETRY frames"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PA3",
+      "function": "USART2_RX",
+      "connectsTo": "Jetson J12 pin 8 TX",
+      "level": "3.3V TTL",
+      "note": "921600 8N1, HEALTH frames"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PA9",
+      "function": "USART1_TX",
+      "connectsTo": "ATmega128A PE0 RXD0",
+      "level": "3.3V into a 5V input",
+      "note": "diagnostics only; never a safety command"
+    },
+    {
+      "board": "STM32F411",
+      "pin": "PA10",
+      "function": "USART1_RX",
+      "connectsTo": "ATmega128A PE1 TXD0",
+      "level": "5V TTL",
+      "note": "LEVEL SHIFT OR DIVIDER REQUIRED; a 5V output drives a 3.3V pin"
+    },
+      {
+        "board": "STM32F411",
+        "pin": "PB8",
+        "function": "GPIO_OUT",
+        "connectsTo": "ATmega128A PE4 INT4",
+        "level": "3.3V into a 5V input",
+        "note": "supervised heartbeat, 100 ms toggle"
+      },
+      {
+        "board": "STM32F411",
+        "pin": "PB9",
+        "function": "RESERVED",
+        "connectsTo": "no connection",
+        "level": "do not drive",
+        "note": "reserved by pinmap v4; AI abnormal must never become a direct relay trip output"
+      },
+      {
+        "board": "ATmega128A",
+      "pin": "PE4",
+      "function": "INT4",
+      "connectsTo": "STM32 PB8",
+      "level": "5V input",
+      "note": "heartbeat edge capture with internal pull-up reset bias; INT4 to INT7 avoid the USART0 and TWI pins"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PE0",
+      "function": "RXD0",
+      "connectsTo": "STM32 PA9",
+      "level": "5V input",
+      "note": "diagnostic UART receive"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PE1",
+      "function": "TXD0",
+      "connectsTo": "STM32 PA10",
+      "level": "5V output",
+      "note": "diagnostic UART transmit; requires level shifting toward the STM32"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PD5",
+      "function": "GPIO_IN_PULLUP",
+      "connectsTo": "SW1 manual ARM",
+      "level": "5V",
+      "note": "switch to GND"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PD6",
+      "function": "GPIO_IN_PULLUP",
+      "connectsTo": "SW2 E-stop",
+      "level": "5V",
+      "note": "switch to GND; active low"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PD7",
+      "function": "GPIO_OUT",
+      "connectsTo": "K1 relay module IN",
+      "level": "5V",
+      "note": "must leave the relay de-energized while tri-stated at reset; see R2 bias"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PB1",
+      "function": "ISP_SCK",
+      "connectsTo": "ISP programmer",
+      "level": "5V",
+      "note": "reserved for in-system programming"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PB2",
+      "function": "ISP_MOSI",
+      "connectsTo": "ISP programmer",
+      "level": "5V",
+      "note": "reserved for in-system programming"
+    },
+    {
+      "board": "ATmega128A",
+      "pin": "PB3",
+      "function": "ISP_MISO",
+      "connectsTo": "ISP programmer",
+      "level": "5V",
+      "note": "reserved for in-system programming"
+    },
+    {
+      "board": "Jetson Orin Nano",
+      "pin": "J12 pin 10",
+      "function": "UART RX",
+      "connectsTo": "STM32 PA2",
+      "level": "3.3V TTL",
+      "note": "3.3V only; never connect a 5V UART"
+    },
+    {
+      "board": "Jetson Orin Nano",
+      "pin": "J12 pin 8",
+      "function": "UART TX",
+      "connectsTo": "STM32 PA3",
+      "level": "3.3V TTL",
+      "note": "HEALTH keepalive and commands"
+    },
+    {
+      "board": "Jetson Orin Nano",
+      "pin": "J12 pin 6",
+      "function": "GND",
+      "connectsTo": "common signal ground",
+      "level": "GND",
+      "note": "the Jetson uses its own official PSU; signal ground only"
+    }
+  ],
+  "consumers": [
+    {
+      "path": "firmware/stm32/include/r300_link.h",
+      "kind": "c-header",
+      "profile": "firmware"
+    },
+    {
+      "path": "firmware/avr/include/r300_link.h",
+      "kind": "c-header",
+      "profile": "firmware"
+    },
+    {
+      "path": "edge/r300_link/link_contract.py",
+      "kind": "python-module",
+      "profile": "jetson"
+    },
+    {
+      "path": "docs/interface/r300-link.md",
+      "kind": "markdown",
+      "profile": "edge-ai"
+    },
+    {
+      "path": "hardware/pinmap.generated.csv",
+      "kind": "csv",
+      "profile": "firmware"
+    }
+  ],
+  "supersedes": {
+    "note": "The AVR side of this contract intentionally contradicts the cited pinmap and BOM. Those documents specify an ATmega328P/Arduino Nano; the built system uses an ATmega128A, so every AVR pin here is reassigned and this contract is authoritative for them. The STM32 and Jetson pins are unchanged from the cited pinmap.",
+    "documents": [
+      "project_file/R300_AI_Motor_KiCad_v4/R300_AI_Motor_KiCad_v4/R300_AI_Motor_Pinmap_v4.csv",
+      "project_file/R300_AI_Motor_KiCad_v4/R300_AI_Motor_KiCad_v4/R300_AI_Motor_BOM_v4.csv",
+      "project_file/R300_AI_Motor_Pinmap_v3.csv",
+      "project_file/R300_AI_Motor_BOM_v3.csv",
+      "project_file/02_R300_System_Architecture_HLD_v1.0.docx",
+      "project_file/04_R300_SW_Function_Definition_v1.0.docx"
+    ],
+    "reason": "ATmega328P/Arduino Nano replaced by ATmega128A"
+  }
+}

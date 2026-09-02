@@ -1,0 +1,2 @@
+# Kernel-native tools are installed with apt or come from the pinned kernel tree.
+# Add project-specific Python orchestration packages here and lock them before release.

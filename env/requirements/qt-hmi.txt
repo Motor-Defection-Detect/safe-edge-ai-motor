@@ -1,0 +1,9 @@
+# R300: Qt dashboard binding is PyQt5 (project decision; see .claude/embedded/project.json runtime.qt).
+# Pin these before the image is used as release evidence.
+PyQt5
+pyqtgraph
+numpy
+pytest
+pytest-qt
+ruff
+mypy

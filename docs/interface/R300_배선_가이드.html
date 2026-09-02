@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>R300 배선 가이드</title>
+<style>
+  @font-face { font-family: "R300 Korean"; src: url("file:///C:/Windows/Fonts/malgun.ttf") format("truetype"); font-weight: 400; }
+  @font-face { font-family: "R300 Korean"; src: url("file:///C:/Windows/Fonts/malgunbd.ttf") format("truetype"); font-weight: 700; }
+  @page { size: A4; margin: 12mm 13mm 14mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; color: #17202a; font-family: "R300 Korean", "Malgun Gothic", sans-serif; font-size: 9.4pt; line-height: 1.48; }
+  .page { min-height: 268mm; break-after: page; position: relative; padding-bottom: 8mm; }
+  .page:last-child { break-after: auto; }
+  h1 { margin: 0 0 3mm; color: #102a43; font-size: 28pt; line-height: 1.15; letter-spacing: -1px; }
+  h2 { margin: 0 0 3mm; padding-bottom: 1.5mm; color: #0b7285; border-bottom: 2px solid #99e9f2; font-size: 17pt; }
+  h3 { margin: 4mm 0 1.5mm; color: #1864ab; font-size: 11.5pt; }
+  p { margin: 1.2mm 0 2.2mm; }
+  ul, ol { margin: 1.5mm 0 2.5mm 5mm; padding-left: 4mm; }
+  li { margin: 1.1mm 0; }
+  code { font-family: Consolas, monospace; font-size: 8.4pt; color: #7c2d12; background: #fff4e6; padding: .2mm 1mm; border-radius: 1mm; }
+  .eyebrow { color: #0b7285; font-size: 11pt; font-weight: 700; letter-spacing: 1.5px; margin-top: 17mm; }
+  .subtitle { color: #486581; font-size: 15pt; margin: 0 0 7mm; }
+  .meta { margin-top: 7mm; color: #627d98; }
+  .callout { border-left: 4px solid #f08c00; background: #fff9db; padding: 3mm 4mm; margin: 3mm 0; }
+  .danger { border-left-color: #e03131; background: #fff5f5; }
+  .ok { border-left-color: #2f9e44; background: #ebfbee; }
+  .status { display: inline-block; padding: 1.4mm 2.6mm; border-radius: 10mm; font-weight: 700; color: #fff; background: #e03131; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .card { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 3mm; background: #f8fafc; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 2mm 0 3mm; font-size: 8.1pt; }
+  th { color: #fff; background: #0b7285; font-weight: 700; }
+  th, td { border: 1px solid #bcccdc; padding: 1.5mm 1.7mm; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  tr:nth-child(even) td { background: #f1f5f9; }
+  .small { font-size: 8pt; color: #52606d; }
+  .formula { margin: 3mm 0; padding: 3mm; background: #102a43; color: #fff; border-radius: 2mm; font-family: Consolas, monospace; font-size: 10pt; }
+  .checklist { list-style: none; margin-left: 0; padding-left: 0; }
+  .checklist li { padding: 1.4mm 2mm 1.4mm 8mm; position: relative; border-bottom: 1px solid #e4e7eb; }
+  .checklist li::before { content: "□"; position: absolute; left: 2mm; font-size: 12pt; color: #0b7285; }
+  .ban li::marker { color: #c92a2a; font-weight: 700; }
+  .footer { position: absolute; bottom: 0; left: 0; right: 0; border-top: 1px solid #d9e2ec; padding-top: 1.5mm; color: #829ab1; font-size: 7.5pt; display: flex; justify-content: space-between; }
+  svg { width: 100%; height: auto; display: block; margin: 3mm 0; }
+  .legend { display: flex; gap: 5mm; font-size: 7.7pt; color: #52606d; }
+  .dot { display: inline-block; width: 3mm; height: 3mm; border-radius: 50%; vertical-align: -0.4mm; margin-right: 1mm; }
+  .no-break { break-inside: avoid; }
+  @media print { body { zoom: 0.94; } }
+</style>
+</head>
+<body>
+
+<section class="page" id="page-1">
+  <div class="eyebrow">R300 ON-DEVICE PROJECT</div>
+  <h1>R300 배선 가이드</h1>
+  <p class="subtitle">STM32F411 BlackPill · GY-521 · ACS712-05B · LR7843 · ATmega128A · Jetson Orin Nano</p>
+  <span class="status">소프트웨어 검증 완료 / 실물 HIL 검증 전</span>
+
+  <div class="callout danger" style="margin-top:8mm">
+    <b>중요:</b> 이 문서는 코드와 인터페이스 계약에 맞춘 제작 기준이다. 실제 모터 극성, 릴레이 트리거 극성·접점 정격,
+    LR7843 발열, ACS712 영점·감도, 비상정지 기능은 아직 실물에서 PASS 판정을 내리지 않았다.
+    최초 인가에는 반드시 전류 제한 전원과 멀티미터를 사용한다.
+  </div>
+
+  <h3>전체 연결 구조</h3>
+  <svg viewBox="0 0 1000 430" role="img" aria-label="R300 전체 배선 블록도">
+    <defs>
+      <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#1971c2"/></marker>
+      <marker id="arrR" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#e03131"/></marker>
+      <style>
+        .b{fill:#f8fafc;stroke:#486581;stroke-width:2}.t{font:700 18px 'R300 Korean';fill:#102a43}.s{font:14px 'R300 Korean';fill:#334e68}
+        .sig{fill:none;stroke:#1971c2;stroke-width:3;marker-end:url(#arr)}.pwr{fill:none;stroke:#e03131;stroke-width:5;marker-end:url(#arrR)}
+        .gnd{fill:none;stroke:#495057;stroke-width:3;stroke-dasharray:8 5}.lbl{font:13px 'R300 Korean';fill:#1864ab}.rl{font:13px 'R300 Korean';fill:#c92a2a}
+      </style>
+    </defs>
+    <rect class="b" x="385" y="135" width="230" height="155" rx="12"/><text class="t" x="500" y="168" text-anchor="middle">STM32F411 BlackPill</text>
+    <text class="s" x="405" y="200">PB10/PB11/PB1: GY-521</text><text class="s" x="405" y="228">PA0: ACS712 ADC</text><text class="s" x="405" y="256">PB6: LR7843 PWM</text>
+    <rect class="b" x="55" y="45" width="230" height="105" rx="12"/><text class="t" x="170" y="77" text-anchor="middle">GY-521 / MPU-6050</text><text class="s" x="75" y="108">3.3 V · I²C2 · INT · AD0=GND</text>
+    <rect class="b" x="55" y="220" width="230" height="105" rx="12"/><text class="t" x="170" y="252" text-anchor="middle">ACS712-05B</text><text class="s" x="75" y="283">5 V · 5 A · 185 mV/A</text><text class="s" x="75" y="306">12k/22k + 100 nF → PA0</text>
+    <rect class="b" x="715" y="35" width="230" height="105" rx="12"/><text class="t" x="830" y="67" text-anchor="middle">Jetson Orin Nano</text><text class="s" x="735" y="98">J12 UART 3.3 V · 별도 PSU</text>
+    <rect class="b" x="715" y="180" width="230" height="115" rx="12"/><text class="t" x="830" y="212" text-anchor="middle">ATmega128A 안전부</text><text class="s" x="735" y="244">PE4 heartbeat · PD7 relay</text><text class="s" x="735" y="271">PD5 ARM · PD6 E-stop</text>
+    <rect class="b" x="385" y="345" width="230" height="70" rx="12"/><text class="t" x="500" y="377" text-anchor="middle">LR7843 + R300 모터</text><text class="s" x="405" y="401">단방향 low-side · flyback diode</text>
+    <path class="sig" d="M285 97 C350 97 345 178 385 178"/><text class="lbl" x="305" y="112">I²C2 + INT</text>
+    <path class="sig" d="M285 272 L385 242"/><text class="lbl" x="300" y="276">ADC</text>
+    <path class="sig" d="M615 170 C670 125 680 90 715 88"/><text class="lbl" x="625" y="115">USART2</text>
+    <path class="sig" d="M615 225 L715 235"/><text class="lbl" x="635" y="220">heartbeat/UART</text>
+    <path class="sig" d="M500 290 L500 345"/><text class="lbl" x="515" y="324">PWM</text>
+    <path class="pwr" d="M715 278 C675 330 650 380 615 380"/><text class="rl" x="655" y="352">K1 전원 차단</text>
+    <path class="gnd" d="M100 422 L900 422"/>
+  </svg>
+  <div class="legend"><span><i class="dot" style="background:#1971c2"></i>신호</span><span><i class="dot" style="background:#e03131"></i>모터 전력 경로</span><span><i class="dot" style="background:#495057"></i>공통 접지</span></div>
+  <div class="meta">문서 기준일: 2026-09-02 · 계약 digest: <code>c6ef7e3e1452425c</code></div>
+  <div class="footer"><span>R300 배선 가이드</span><span>1 / 6</span></div>
+</section>
+
+<section class="page" id="page-2">
+  <h2>1. 신호 핀맵</h2>
+  <p>전원 인가 전에 아래 표대로 한 선씩 연속성 검사를 한다. STM32와 Jetson UART는 모두 <b>3.3 V TTL</b>이다.</p>
+  <table>
+    <colgroup><col style="width:17%"><col style="width:16%"><col style="width:25%"><col style="width:14%"><col style="width:28%"></colgroup>
+    <thead><tr><th>보드 / 핀</th><th>기능</th><th>연결 대상</th><th>레벨</th><th>주의</th></tr></thead>
+    <tbody>
+      <tr><td>STM32 PB10</td><td>I2C2_SCL</td><td>GY-521 SCL</td><td>3.3 V</td><td>AF4 open-drain, pull-up은 3.3 V에만</td></tr>
+      <tr><td>STM32 PB11</td><td>I2C2_SDA</td><td>GY-521 SDA</td><td>3.3 V</td><td>AF4 open-drain, 배선 짧게</td></tr>
+      <tr><td>STM32 PB1</td><td>EXTI1</td><td>GY-521 INT</td><td>3.3 V</td><td>1 kHz data-ready 상승 에지</td></tr>
+      <tr><td>GY-521 AD0</td><td>주소 선택</td><td>GND</td><td>LOW</td><td>I²C 주소 <code>0x68</code></td></tr>
+      <tr><td>STM32 PA0</td><td>ADC1_IN0</td><td>ACS712 OUT 분압점</td><td>0~3.3 V</td><td>12k/22k 및 100 nF 필수</td></tr>
+      <tr><td>STM32 PB6</td><td>TIM4_CH1</td><td>LR7843 PWM/IN</td><td>3.3 V</td><td>1 kHz, active-high</td></tr>
+      <tr><td>STM32 PB7</td><td>GPIO</td><td>연결하지 않음</td><td>LOW 유지</td><td>LR7843는 H-bridge가 아님</td></tr>
+      <tr><td>STM32 PB8</td><td>heartbeat</td><td>ATmega128A PE4/INT4</td><td>3.3→5 V 입력</td><td>정상 시 100 ms toggle</td></tr>
+      <tr><td>STM32 PA2</td><td>USART2_TX</td><td>Jetson J12 pin 10 RX</td><td>3.3 V TTL</td><td>921600 8N1 telemetry</td></tr>
+      <tr><td>STM32 PA3</td><td>USART2_RX</td><td>Jetson J12 pin 8 TX</td><td>3.3 V TTL</td><td>HEALTH/command 수신</td></tr>
+      <tr><td>Jetson J12 pin 6</td><td>GND</td><td>공통 신호 GND</td><td>GND</td><td>Jetson 전원은 별도 PSU</td></tr>
+    </tbody>
+  </table>
+
+  <h3>STM32 ↔ ATmega128A 진단 및 안전 신호</h3>
+  <table>
+    <colgroup><col style="width:18%"><col style="width:24%"><col style="width:18%"><col style="width:40%"></colgroup>
+    <thead><tr><th>출발</th><th>도착</th><th>용도</th><th>배선 조건</th></tr></thead>
+    <tbody>
+      <tr><td>STM32 PA9</td><td>ATmega PE0/RXD0</td><td>진단 UART</td><td>3.3 V 출력은 5 V 입력으로 직접 연결 가능</td></tr>
+      <tr><td>ATmega PE1/TXD0</td><td>STM32 PA10</td><td>진단 UART</td><td><b>5→3.3 V 레벨시프터 또는 분압 필수</b></td></tr>
+      <tr><td>ATmega PD5</td><td>SW1 → GND</td><td>수동 ARM</td><td>내부 pull-up, 소프트웨어가 대신 누르면 안 됨</td></tr>
+      <tr><td>ATmega PD6</td><td>SW2 → GND</td><td>E-stop 입력</td><td>active-low. 시제품 입력이며 인증 안전회로 대체 불가</td></tr>
+      <tr><td>ATmega PD7</td><td>K1 relay IN</td><td>모터 전원 허가</td><td>리셋 중 비활성 바이어스, 실제 트리거 극성 측정</td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><b>예약:</b> STM32 PB9는 연결하거나 구동하지 않는다. AI 판정 출력을 릴레이 차단선에 직접 연결하지 않는다.</div>
+  <div class="footer"><span>R300 배선 가이드</span><span>2 / 6</span></div>
+</section>
+
+<section class="page" id="page-3">
+  <h2>2. 모터 전력 경로와 LR7843</h2>
+  <div class="callout danger"><b>반드시 무전원 상태에서 배선한다.</b> K1은 접점의 정격 전압·연속 전류·돌입 전류가 R300 모터의 실측 stall 전류를 감당하는지 확인해야 한다.</div>
+
+  <svg viewBox="0 0 1000 310" role="img" aria-label="모터 전류 경로 회로도">
+    <defs>
+      <marker id="p" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#e03131"/></marker>
+      <style>.w{fill:none;stroke:#e03131;stroke-width:5;marker-end:url(#p)}.n{fill:#fff;stroke:#334e68;stroke-width:2}.tt{font:700 18px 'R300 Korean';fill:#102a43}.ss{font:14px 'R300 Korean';fill:#334e68}.d{stroke:#7c3aed;stroke-width:4;fill:none}.g{stroke:#343a40;stroke-width:4}</style>
+    </defs>
+    <rect class="n" x="20" y="100" width="125" height="75" rx="8"/><text class="tt" x="82" y="130" text-anchor="middle">전류 제한</text><text class="ss" x="82" y="153" text-anchor="middle">모터 PSU +</text>
+    <rect class="n" x="190" y="100" width="130" height="75" rx="8"/><text class="tt" x="255" y="130" text-anchor="middle">K1 릴레이</text><text class="ss" x="255" y="153" text-anchor="middle">COM → NO</text>
+    <rect class="n" x="365" y="100" width="145" height="75" rx="8"/><text class="tt" x="437" y="130" text-anchor="middle">ACS712</text><text class="ss" x="437" y="153" text-anchor="middle">IP+ → IP−</text>
+    <rect class="n" x="555" y="100" width="130" height="75" rx="8"/><text class="tt" x="620" y="130" text-anchor="middle">R300 모터</text><text class="ss" x="620" y="153" text-anchor="middle">+ → −</text>
+    <rect class="n" x="730" y="100" width="140" height="75" rx="8"/><text class="tt" x="800" y="130" text-anchor="middle">LR7843</text><text class="ss" x="800" y="153" text-anchor="middle">Drain → Source</text>
+    <rect class="n" x="910" y="100" width="75" height="75" rx="8"/><text class="tt" x="947" y="130" text-anchor="middle">PSU</text><text class="ss" x="947" y="153" text-anchor="middle">−</text>
+    <path class="w" d="M145 138 L190 138"/><path class="w" d="M320 138 L365 138"/><path class="w" d="M510 138 L555 138"/><path class="w" d="M685 138 L730 138"/><path class="w" d="M870 138 L910 138"/>
+    <path class="d" d="M565 85 L675 85 L675 100 M565 85 L565 100"/><text class="ss" x="620" y="52" text-anchor="middle">flyback diode</text><text class="ss" x="620" y="73" text-anchor="middle">K(캐소드)=모터+ / A(애노드)=모터−</text>
+    <path class="g" d="M800 175 L800 238 L947 238 L947 175"/><text class="ss" x="870" y="263" text-anchor="middle">모터 전원 GND</text>
+    <path d="M800 100 L800 65 L735 65" stroke="#1971c2" stroke-width="3" fill="none"/><text class="ss" x="650" y="70">PB6 PWM/IN, active-high</text>
+  </svg>
+
+  <h3>배선 순서</h3>
+  <ol>
+    <li>모터 전원 <b>+</b>를 K1 <b>COM</b>에 연결하고, K1 <b>NO</b>를 ACS712 <b>IP+</b>에 연결한다.</li>
+    <li>ACS712 <b>IP−</b> → R300 모터 <b>+</b> → 모터 <b>−</b> → LR7843 <b>Drain/OUT</b> 순으로 연결한다.</li>
+    <li>LR7843 <b>Source/GND</b>를 모터 전원 <b>−</b>에 연결한다.</li>
+    <li>flyback diode를 모터 양단에 최대한 가깝게 단다. <b>캐소드(띠)=모터+</b>, <b>애노드=모터−/Drain</b>.</li>
+    <li>STM32 PB6 → 모듈 PWM/IN, STM32 GND → 모듈 신호 GND. 모듈에 input pull-down이 없다면 100 kΩ을 IN-GND에 추가한다.</li>
+  </ol>
+
+  <div class="grid2">
+    <div class="card"><b>동작</b><br>PB6 HIGH 동안 LR7843가 켜져 모터 전류가 흐른다. 펌웨어는 1 kHz PWM, 부팅 0%, 정방향만 허용한다.</div>
+    <div class="card"><b>제한</b><br>LR7843는 low-side 스위치다. 역회전·능동 제동은 불가능하며 필요하면 전원 차단 후 모터선을 교체하거나 H-bridge로 재설계한다.</div>
+  </div>
+  <div class="footer"><span>R300 배선 가이드</span><span>3 / 6</span></div>
+</section>
+
+<section class="page" id="page-4">
+  <h2>3. GY-521과 ACS712 아날로그 입력</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">GY-521 / MPU-6050</h3>
+      <ul>
+        <li>VCC → STM32 <b>3V3</b>, GND → 공통 GND</li>
+        <li>SCL → PB10, SDA → PB11, INT → PB1</li>
+        <li>AD0 → GND, 주소 <code>0x68</code></li>
+        <li>I²C 400 kHz, 가속도 ±16 g, data-ready 1 kHz</li>
+        <li>모듈 pull-up이 <b>5 V에 연결되지 않았는지</b> 전압 측정</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">ACS712-05B</h3>
+      <ul>
+        <li>VCC → <b>5 V</b>, GND → 공통 GND</li>
+        <li>IP+/IP−는 모터 전류 경로에 직렬</li>
+        <li>OUT은 12 kΩ을 거쳐 PA0로 입력</li>
+        <li>PA0에 22 kΩ과 100 nF를 각각 GND로 연결</li>
+        <li>부팅 시 모터 OFF 상태 256 샘플 영점 보정</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>ACS712 출력 보호 회로</h3>
+  <svg viewBox="0 0 1000 260" role="img" aria-label="ACS712 분압과 RC 필터">
+    <style>.cw{stroke:#1971c2;stroke-width:4;fill:none}.cg{stroke:#343a40;stroke-width:3;fill:none}.cr{fill:#fff;stroke:#334e68;stroke-width:2}.ct{font:700 18px 'R300 Korean';fill:#102a43}.cs{font:14px 'R300 Korean';fill:#334e68}</style>
+    <rect class="cr" x="60" y="70" width="160" height="100" rx="10"/><text class="ct" x="140" y="105" text-anchor="middle">ACS712-05B</text><text class="cs" x="140" y="135" text-anchor="middle">OUT: 0~5 V 가능</text>
+    <path class="cw" d="M220 120 L330 120"/><rect class="cr" x="330" y="98" width="140" height="44"/><text class="ct" x="400" y="127" text-anchor="middle">12 kΩ</text>
+    <path class="cw" d="M470 120 L650 120"/><circle cx="560" cy="120" r="8" fill="#1971c2"/><text class="ct" x="650" y="104">PA0 / ADC1_IN0</text><text class="cs" x="650" y="130">최대 약 3.24 V</text>
+    <path class="cg" d="M560 128 L560 170"/><rect class="cr" x="520" y="170" width="80" height="40"/><text class="ct" x="560" y="196" text-anchor="middle">22 kΩ</text><path class="cg" d="M560 210 L560 238 M530 238 L590 238 M540 246 L580 246 M550 254 L570 254"/>
+    <path class="cg" d="M475 120 L475 180 M445 180 L505 180 M445 195 L505 195 M475 195 L475 238 M445 238 L505 238 M455 246 L495 246 M465 254 L485 254"/><text class="cs" x="410" y="186" text-anchor="end">100 nF</text>
+  </svg>
+
+  <div class="formula">분압비 = 22 / (12 + 22) = 0.6471<br>
+영점: 2.5 V × 0.6471 ≈ 1.62 V<br>
+최대: 5.0 V × 0.6471 ≈ 3.24 V &lt; STM32 ADC 3.3 V<br>
+전류: mA = (ADCraw − ADCzero) × 3300 × 34 × 1000 / (4095 × 22 × 185)</div>
+
+  <div class="callout"><b>오차 원인:</b> 저항 공차, 5 V 전원 오차, 센서 온도·영점 편차가 남는다. 185 mV/A는 기본값이며 실제 전류계와 비교해 보정값을 기록한다. ACS712-05B의 ±5 A 범위를 넘기지 않는다.</div>
+  <div class="footer"><span>R300 배선 가이드</span><span>4 / 6</span></div>
+</section>
+
+<section class="page" id="page-5">
+  <h2>4. 전원·접지 규칙과 최초 기동</h2>
+  <h3>전원 및 접지</h3>
+  <ul>
+    <li>GY-521은 <b>3.3 V</b>, ACS712는 <b>5 V</b>, Jetson은 제조사 권장 별도 PSU를 사용한다.</li>
+    <li>STM32·ATmega128A·ACS712 신호 GND·LR7843 입력 GND·모터 전원 −는 한 점의 <b>스타 접지</b>로 모은다.</li>
+    <li>모터 고전류선은 센서 I²C/ADC/UART 선과 떨어뜨리고, 전류 루프를 짧고 굵게 배선한다.</li>
+    <li>Jetson에는 모터 전원을 공급하지 않는다. Jetson과 제어부 사이에는 UART 신호와 신호 GND만 연결한다.</li>
+    <li>K1 접점, ACS712 단자, 커넥터, 배선 굵기, flyback diode는 R300의 <b>실측 stall 전류</b>를 기준으로 선정한다.</li>
+  </ul>
+
+  <h3>최초 기동 체크리스트</h3>
+  <ol class="checklist">
+    <li>모터 전원과 USB/J-Link 전원을 모두 분리하고 단락·극성·연속성을 검사했다.</li>
+    <li>K1이 무전원/리셋 상태에서 열려 있고, PD7의 실제 active-high 극성을 확인했다.</li>
+    <li>flyback diode 방향이 캐소드=모터+, 애노드=모터−/Drain임을 확인했다.</li>
+    <li>GY-521을 3.3 V로 켠 뒤 SCL/SDA가 3.3 V를 넘지 않으며 WHO_AM_I=<code>0x68</code>임을 확인했다.</li>
+    <li>ACS712를 5 V로 켜고 모터 OFF 상태에서 OUT≈2.5 V, PA0≈1.62 V, PA0&lt;3.3 V를 측정했다.</li>
+    <li>PB6이 리셋/부팅 중 LOW이고, PWM 0%에서 LR7843 출력이 OFF인지 측정했다.</li>
+    <li>PB8 heartbeat가 Jetson/센서 비정상 시 멈추고 500 ms 이후 릴레이가 차단되는지 확인했다.</li>
+    <li>전류 제한값을 낮게 설정하고 PWM을 0%에서 조금씩 올리며 전류·회전 방향을 확인했다.</li>
+    <li>MOSFET, 모터, 릴레이, 커넥터, 배선 온도를 기록하고 안전 한계 이내인지 확인했다.</li>
+    <li>E-stop을 눌렀을 때 PWM과 K1이 차단되고 자동 재기동하지 않음을 확인했다.</li>
+  </ol>
+
+  <h3>금지 배선</h3>
+  <ul class="ban">
+    <li><b>5 V</b>를 STM32 PA0, PA2/PA3, PA10, PB1, PB6, PB10/PB11에 직접 넣지 않는다.</li>
+    <li>ATmega PE1(5 V TX)을 STM32 PA10에 레벨 변환 없이 직접 연결하지 않는다.</li>
+    <li>bare IRLR7843 게이트를 PB6에 직접 대체 연결하지 않는다. 확정된 3.3 V active-high 입력 모듈만 사용한다.</li>
+    <li>flyback diode 없이 모터를 스위칭하거나 diode 방향을 반대로 연결하지 않는다.</li>
+    <li>ACS712 OUT을 분압 없이 PA0에 연결하지 않는다. IP+/IP−를 전원/GND 센스 입력처럼 병렬 연결하지 않는다.</li>
+    <li>K1을 우회하거나 AI/Jetson 출력으로 릴레이를 직접 구동하지 않는다.</li>
+    <li>모터 회전 중 배선을 바꾸거나, PB7을 역회전 신호로 사용하지 않는다.</li>
+  </ul>
+  <div class="footer"><span>R300 배선 가이드</span><span>5 / 6</span></div>
+</section>
+
+<section class="page" id="page-6">
+  <h2>5. 코드 조정 지점과 HIL 판정</h2>
+  <p>모듈이나 저항을 실제로 변경한 경우에만 아래 값을 바꾼다. 값 변경 후 계약 생성과 fast/full 검증을 다시 수행한다.</p>
+  <table>
+    <colgroup><col style="width:43%"><col style="width:14%"><col style="width:43%"></colgroup>
+    <thead><tr><th>상수 / 위치</th><th>현재값</th><th>변경 조건</th></tr></thead>
+    <tbody>
+      <tr><td><code>R300_MPU6050_ADDRESS</code><br><span class="small">firmware/stm32/include/r300_board_config.h</span></td><td>0x68</td><td>AD0를 HIGH로 바꾸면 주소·배선·계약을 함께 변경</td></tr>
+      <tr><td><code>R300_MPU6050_SMPLRT_DIV</code></td><td>0x07</td><td>샘플링 설계를 변경할 때만 전체 파이프라인과 함께 조정</td></tr>
+      <tr><td><code>R300_MOTOR_PWM_HZ</code></td><td>1000 Hz</td><td>스위칭 파형과 발열을 측정해 승인된 경우</td></tr>
+      <tr><td><code>R300_LR7843_PWM_ACTIVE_HIGH</code></td><td>1</td><td>다른 모듈로 교체하고 입력 극성을 실측한 경우</td></tr>
+      <tr><td><code>R300_ACS712_SENSITIVITY_MV_PER_A</code></td><td>185</td><td>ACS712 variant 교체 또는 교정 결과 반영</td></tr>
+      <tr><td><code>R300_ACS712_DIVIDER_TOP_KOHM</code><br><code>...BOTTOM_KOHM</code></td><td>12 / 22</td><td>실제 분압 저항 변경 시 회로와 코드를 함께 변경</td></tr>
+      <tr><td><code>R300_CURRENT_ZERO_SAMPLES</code></td><td>256</td><td>부팅 영점 안정화 시간을 측정해 조정</td></tr>
+      <tr><td><code>R300_RELAY_ACTIVE_HIGH</code><br><span class="small">Makefile AVR_BOARD_FLAGS</span></td><td>1</td><td>K1 입력 극성을 무전원 시험으로 확인한 뒤에만 변경</td></tr>
+    </tbody>
+  </table>
+
+  <h3>실물 HIL에서 남은 필수 증거</h3>
+  <div class="grid2">
+    <div class="card"><b>전기</b><ul><li>전원 레일과 GPIO 전압</li><li>ACS 영점·기준 전류 오차</li><li>PWM 파형과 flyback 파형</li><li>stall/기동 전류와 접점 정격</li></ul></div>
+    <div class="card"><b>안전</b><ul><li>리셋 시 K1 비활성</li><li>heartbeat 상실→500 ms 차단</li><li>E-stop 차단과 수동 재ARM</li><li>센서/Jetson 분리 fail-closed</li></ul></div>
+    <div class="card"><b>열·기계</b><ul><li>LR7843·모터·배선 온도</li><li>회전 방향과 부하 상태</li><li>진동 센서 고정 방향</li><li>커넥터 풀림/노이즈</li></ul></div>
+    <div class="card"><b>판정 기록</b><ul><li>측정기·전원 설정</li><li>실측값과 허용 기준</li><li>사진/파형/로그</li><li>시험자·날짜·PASS/FAIL</li></ul></div>
+  </div>
+
+  <div class="callout danger" style="margin-top:5mm"><b>현재 판정:</b> 코드, 인터페이스 계약, Docker fast/full은 PASS다. 그러나 이 PDF 자체는 실물 배선·극성·열·HIL 시험의 PASS 증거가 아니다. 위 항목을 측정하고 기록한 뒤에만 하드웨어 사용 승인을 내린다.</div>
+
+  <h3>근거 파일</h3>
+  <ul class="small">
+    <li><code>contracts/r300-link.json</code> 및 <code>hardware/pinmap.generated.csv</code></li>
+    <li><code>hardware/r300-gy521-lr7843-acs712.md</code></li>
+    <li><code>firmware/stm32/include/r300_board_config.h</code></li>
+    <li><code>firmware/avr/r300_avr_platform.c</code> 및 프로젝트 Makefile</li>
+  </ul>
+  <div class="footer"><span>R300 배선 가이드</span><span>6 / 6</span></div>
+</section>
+
+</body>
+</html>
