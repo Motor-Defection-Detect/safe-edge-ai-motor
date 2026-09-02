@@ -50,7 +50,7 @@
 <section class="page" id="page-1">
   <div class="eyebrow">R300 ON-DEVICE PROJECT</div>
   <h1>R300 배선 가이드</h1>
-  <p class="subtitle">STM32F411 BlackPill · GY-521 · ACS712-05B · LR7843 · ATmega128A · Jetson Orin Nano</p>
+  <p class="subtitle">NUCLEO-F411RE · GY-521 · ACS712-05B · LR7843 · ATmega128A · Jetson Orin Nano</p>
   <span class="status">소프트웨어 검증 완료 / 실물 HIL 검증 전</span>
 
   <div class="callout danger" style="margin-top:8mm">
@@ -70,8 +70,8 @@
         .gnd{fill:none;stroke:#495057;stroke-width:3;stroke-dasharray:8 5}.lbl{font:13px 'R300 Korean';fill:#1864ab}.rl{font:13px 'R300 Korean';fill:#c92a2a}
       </style>
     </defs>
-    <rect class="b" x="385" y="135" width="230" height="155" rx="12"/><text class="t" x="500" y="168" text-anchor="middle">STM32F411 BlackPill</text>
-    <text class="s" x="405" y="200">PB10/PB11/PB1: GY-521</text><text class="s" x="405" y="228">PA0: ACS712 ADC</text><text class="s" x="405" y="256">PB6: LR7843 PWM</text>
+    <rect class="b" x="385" y="135" width="230" height="155" rx="12"/><text class="t" x="500" y="168" text-anchor="middle">NUCLEO-F411RE</text>
+    <text class="s" x="405" y="200">PB10/PB3/PB1: GY-521</text><text class="s" x="405" y="228">PA0: ACS712 ADC</text><text class="s" x="405" y="256">PB6: LR7843 PWM</text>
     <rect class="b" x="55" y="45" width="230" height="105" rx="12"/><text class="t" x="170" y="77" text-anchor="middle">GY-521 / MPU-6050</text><text class="s" x="75" y="108">3.3 V · I²C2 · INT · AD0=GND</text>
     <rect class="b" x="55" y="220" width="230" height="105" rx="12"/><text class="t" x="170" y="252" text-anchor="middle">ACS712-05B</text><text class="s" x="75" y="283">5 V · 5 A · 185 mV/A</text><text class="s" x="75" y="306">12k/22k + 100 nF → PA0</text>
     <rect class="b" x="715" y="35" width="230" height="105" rx="12"/><text class="t" x="830" y="67" text-anchor="middle">Jetson Orin Nano</text><text class="s" x="735" y="98">J12 UART 3.3 V · 별도 PSU</text>
@@ -98,7 +98,7 @@
     <thead><tr><th>보드 / 핀</th><th>기능</th><th>연결 대상</th><th>레벨</th><th>주의</th></tr></thead>
     <tbody>
       <tr><td>STM32 PB10</td><td>I2C2_SCL</td><td>GY-521 SCL</td><td>3.3 V</td><td>AF4 open-drain, pull-up은 3.3 V에만</td></tr>
-      <tr><td>STM32 PB11</td><td>I2C2_SDA</td><td>GY-521 SDA</td><td>3.3 V</td><td>AF4 open-drain, 배선 짧게</td></tr>
+      <tr><td>STM32 PB3 / D3</td><td>I2C2_SDA</td><td>GY-521 SDA</td><td>3.3 V</td><td>AF9 open-drain, CN10-31</td></tr>
       <tr><td>STM32 PB1</td><td>EXTI1</td><td>GY-521 INT</td><td>3.3 V</td><td>1 kHz data-ready 상승 에지</td></tr>
       <tr><td>GY-521 AD0</td><td>주소 선택</td><td>GND</td><td>LOW</td><td>I²C 주소 <code>0x68</code></td></tr>
       <tr><td>STM32 PA0</td><td>ADC1_IN0</td><td>ACS712 OUT 분압점</td><td>0~3.3 V</td><td>12k/22k 및 100 nF 필수</td></tr>
@@ -121,6 +121,9 @@
       <tr><td>ATmega PD5</td><td>SW1 → GND</td><td>수동 ARM</td><td>내부 pull-up, 소프트웨어가 대신 누르면 안 됨</td></tr>
       <tr><td>ATmega PD6</td><td>SW2 → GND</td><td>E-stop 입력</td><td>active-low. 시제품 입력이며 인증 안전회로 대체 불가</td></tr>
       <tr><td>ATmega PD7</td><td>K1 relay IN</td><td>모터 전원 허가</td><td>리셋 중 비활성 바이어스, 실제 트리거 극성 측정</td></tr>
+      <tr><td>ATmega PB1</td><td>ISP SCK</td><td>펌웨어 다운로드</td><td>5 V ISP 프로그래머의 SCK에 연결</td></tr>
+      <tr><td>ATmega PB2</td><td>ISP MOSI</td><td>펌웨어 다운로드</td><td>5 V ISP 프로그래머의 MOSI에 연결</td></tr>
+      <tr><td>ATmega PB3</td><td>ISP MISO</td><td>펌웨어 다운로드</td><td>5 V ISP 프로그래머의 MISO에 연결</td></tr>
     </tbody>
   </table>
   <div class="callout"><b>예약:</b> STM32 PB9는 연결하거나 구동하지 않는다. AI 판정 출력을 릴레이 차단선에 직접 연결하지 않는다.</div>
@@ -171,7 +174,7 @@
       <h3 style="margin-top:0">GY-521 / MPU-6050</h3>
       <ul>
         <li>VCC → STM32 <b>3V3</b>, GND → 공통 GND</li>
-        <li>SCL → PB10, SDA → PB11, INT → PB1</li>
+        <li>SCL → PB10/D6, SDA → PB3/D3, INT → PB1</li>
         <li>AD0 → GND, 주소 <code>0x68</code></li>
         <li>I²C 400 kHz, 가속도 ±16 g, data-ready 1 kHz</li>
         <li>모듈 pull-up이 <b>5 V에 연결되지 않았는지</b> 전압 측정</li>
@@ -235,7 +238,7 @@
 
   <h3>금지 배선</h3>
   <ul class="ban">
-    <li><b>5 V</b>를 STM32 PA0, PA2/PA3, PA10, PB1, PB6, PB10/PB11에 직접 넣지 않는다.</li>
+    <li><b>5 V</b>를 STM32 PA0, PA2/PA3, PA10, PB1, PB3, PB6, PB10에 직접 넣지 않는다.</li>
     <li>ATmega PE1(5 V TX)을 STM32 PA10에 레벨 변환 없이 직접 연결하지 않는다.</li>
     <li>bare IRLR7843 게이트를 PB6에 직접 대체 연결하지 않는다. 확정된 3.3 V active-high 입력 모듈만 사용한다.</li>
     <li>flyback diode 없이 모터를 스위칭하거나 diode 방향을 반대로 연결하지 않는다.</li>

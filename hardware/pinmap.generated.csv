@@ -1,10 +1,10 @@
 # GENERATED FILE - DO NOT EDIT.
 # Source: contracts/r300-link.json
 # Regenerate: python3 scripts/r300/link_contract.py generate
-# r300-link-sha256:c6ef7e3e1452425cec56811fe875986c0f952a9920acc9c0dca19faccffeaf96
+# r300-link-sha256:29f2f1859f8436d95040e46e33088260242a9141ccccad423b9ca28e59bb3bf2
 Board,Pin,Function,ConnectsTo,Level,Note
 STM32F411,PB10,I2C2_SCL,GY-521 SCL,3.3V,AF4 open-drain; use the module pull-up only if it is tied to 3.3V
-STM32F411,PB11,I2C2_SDA,GY-521 SDA,3.3V,AF4 open-drain; keep the cable short
+STM32F411,PB3,I2C2_SDA,GY-521 SDA,3.3V,AF9 open-drain; NUCLEO-F411RE D3/CN10-31; keep the cable short
 STM32F411,PB1,EXTI1,GY-521 INT,3.3V,MPU-6050 data-ready rising edge
 GY-521,AD0,I2C_ADDRESS_SELECT,GND,3.3V,selects MPU-6050 address 0x68
 STM32F411,PA0,ADC1_IN0,ACS712 OUT via 12k series and 22k to GND,0-3.3V analog,ADC DMA; add 100nF PA0-to-GND; divider limits a 5V output to 3.24V

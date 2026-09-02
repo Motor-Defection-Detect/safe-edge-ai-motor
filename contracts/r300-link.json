@@ -847,11 +847,11 @@
     },
     {
       "board": "STM32F411",
-      "pin": "PB11",
+      "pin": "PB3",
       "function": "I2C2_SDA",
       "connectsTo": "GY-521 SDA",
       "level": "3.3V",
-      "note": "AF4 open-drain; keep the cable short"
+      "note": "AF9 open-drain; NUCLEO-F411RE D3/CN10-31; keep the cable short"
     },
     {
       "board": "STM32F411",
@@ -1066,7 +1066,7 @@
     }
   ],
   "supersedes": {
-    "note": "The AVR side of this contract intentionally contradicts the cited pinmap and BOM. Those documents specify an ATmega328P/Arduino Nano; the built system uses an ATmega128A, so every AVR pin here is reassigned and this contract is authoritative for them. The STM32 and Jetson pins are unchanged from the cited pinmap.",
+    "note": "This contract is authoritative where the cited pinmap and BOM differ. ATmega328P/Arduino Nano is replaced by ATmega128A. The STM32 target is NUCLEO-F411RE, whose LQFP64 package does not expose PB11, so GY-521 SDA moves to the exposed I2C2_SDA alternate PB3/AF9. Other STM32 and Jetson signal pins remain unchanged.",
     "documents": [
       "project_file/R300_AI_Motor_KiCad_v4/R300_AI_Motor_KiCad_v4/R300_AI_Motor_Pinmap_v4.csv",
       "project_file/R300_AI_Motor_KiCad_v4/R300_AI_Motor_KiCad_v4/R300_AI_Motor_BOM_v4.csv",
@@ -1075,6 +1075,6 @@
       "project_file/02_R300_System_Architecture_HLD_v1.0.docx",
       "project_file/04_R300_SW_Function_Definition_v1.0.docx"
     ],
-    "reason": "ATmega328P/Arduino Nano replaced by ATmega128A"
+    "reason": "ATmega328P/Arduino Nano replaced by ATmega128A; STM32 target changed to NUCLEO-F411RE"
   }
 }

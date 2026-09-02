@@ -217,11 +217,13 @@ bool r300_stm32_platform_init(void)
     gpio_mode(R300_GPIOB, 1u, 0u);
     gpio_mode(R300_GPIOB, 6u, 2u); gpio_speed(R300_GPIOB, 6u, 2u); gpio_af(R300_GPIOB, 6u, 2u);
     gpio_mode(R300_GPIOB, 7u, 1u); gpio_mode(R300_GPIOB, 8u, 1u);
-    for (uint8_t pin = 10u; pin <= 11u; ++pin) {
-        gpio_mode(R300_GPIOB, pin, 2u); gpio_speed(R300_GPIOB, pin, 2u);
-        gpio_af(R300_GPIOB, pin, 4u); gpio_pull(R300_GPIOB, pin, 1u);
-        R300_GPIOB->OTYPER |= R300_BIT(pin);
-    }
+    gpio_mode(R300_GPIOB, 10u, 2u); gpio_speed(R300_GPIOB, 10u, 2u);
+    gpio_af(R300_GPIOB, 10u, 4u); gpio_pull(R300_GPIOB, 10u, 1u);
+    R300_GPIOB->OTYPER |= R300_BIT(10u);
+    /* NUCLEO-F411RE LQFP64 has no PB11; PB3 exposes I2C2_SDA on AF9. */
+    gpio_mode(R300_GPIOB, 3u, 2u); gpio_speed(R300_GPIOB, 3u, 2u);
+    gpio_af(R300_GPIOB, 3u, 9u); gpio_pull(R300_GPIOB, 3u, 1u);
+    R300_GPIOB->OTYPER |= R300_BIT(3u);
 
     /* Start the 1 MHz source clock before sensor initialization. */
     R300_TIM2->PSC = 95u; R300_TIM2->ARR = 0xffffffffu;

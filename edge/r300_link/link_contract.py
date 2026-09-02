@@ -1,14 +1,14 @@
 # GENERATED FILE - DO NOT EDIT.
 # Source: contracts/r300-link.json
 # Regenerate: python3 scripts/r300/link_contract.py generate
-# r300-link-sha256:c6ef7e3e1452425cec56811fe875986c0f952a9920acc9c0dca19faccffeaf96
+# r300-link-sha256:29f2f1859f8436d95040e46e33088260242a9141ccccad423b9ca28e59bb3bf2
 """Frame layout, CRC and timing shared by the Jetson receiver and the Qt dashboard."""
 from __future__ import annotations
 
 import struct
 from typing import Final
 
-CONTRACT_SHA256: Final = 'c6ef7e3e1452425cec56811fe875986c0f952a9920acc9c0dca19faccffeaf96'
+CONTRACT_SHA256: Final = '29f2f1859f8436d95040e46e33088260242a9141ccccad423b9ca28e59bb3bf2'
 PROTOCOL_VERSION: Final = 2
 ENDIANNESS: Final = 'little'
 
