@@ -20,6 +20,7 @@
 /MANIFEST.sha256
 /VERSION
 /*.md
+!/README.md
 
 # Embedded-loop authoring harness; keep the project-specific scripts/r300 tools
 /scripts/embedded/
