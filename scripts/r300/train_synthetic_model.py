@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# [보조 도구] 실제 데이터가 없을 때 소프트웨어 경로 전체를 시험하려고 '합성(가짜) 데이터'로 1D-CNN을 학습한다.
+# - 역할: 합성 신호 생성 -> 세션 단위 split -> 윈도우 -> 학습 -> TorchScript 모델 + 해시 사이드카 저장.
+# - 주의: 점수는 장비 정확도 증거가 아니다. 결과물에는 SYNTHETIC / diagnostic_use_allowed=false 가 기록된다.
+# - 읽기 순서: 핵심 읽기 순서(1~13번) 밖의 보조 도구다. 8번(edge/r300_model.py)을 읽은 뒤에 보면 좋다.
+# - 다음에 볼 곳: edge/r300_model.py (R300Net, save_artifact), 문서는 docs/interface/ml-synthetic-model.md
+# - 실행: make model-synthetic  (torch, numpy 필요)
 """Train an explicitly synthetic R300 1D-CNN for end-to-end software demos."""
 from __future__ import annotations
 
@@ -27,11 +33,18 @@ from r300_model import DEFAULT_LABELS, R300Net, save_artifact  # noqa: E402
 LABELS = DEFAULT_LABELS
 # 고정 계약: 설계서의 512 sample / hop 256은 MCU·Jetson 계약과 함께 바꿔야 한다.
 WINDOW, HOP = lc.WINDOW_SAMPLES, lc.HOP_SAMPLES
+# [누수 방지] split은 윈도우가 아니라 '세션' 단위로 먼저 정한다: 클래스마다 6세션 = 4 train / 1 validation / 1 test.
+# 윈도우는 hop 256이라 서로 50% 겹친다. 윈도우를 먼저 섞어 나누면 거의 같은 신호가 train과 test에
+# 모두 들어가 점수가 부풀려진다(leakage). 그래서 세션을 먼저 나누고, 그 안에서만 윈도우를 만든다.
 # 현장 변경 지점: 실제 수집은 class당 6회(4/1/1), 90초, PWM 60/75/90을 유지한다.
 SESSION_SPLITS = ("train", "train", "train", "train", "validation", "test")
 SYNTHETIC_SESSION_SAMPLES = 4096
 
 
+# 합성 세션 1개를 만든다. 입력: 클래스 이름, 세션 번호(PWM 600/750/900을 돌려가며 사용), 시드.
+# 출력: (진동 [N,3], 전류 [N], pwm). 회전 주파수에 비례하는 사인파 + 잡음이 기본이다.
+# 클래스별 차이: UNBALANCE는 1x 진폭과 전류 증가, LOOSENESS는 2x/3x 고조파, LOAD는 전류 크게 증가.
+# 목적은 '분리 가능한 신호로 소프트웨어 경로 시험'이지 실제 고장 신호 모사가 아니다.
 def _session(label: str, session_index: int, seed: int) -> tuple[np.ndarray, np.ndarray, int]:
     """Generate separable signals only for testing the software path, not accuracy claims."""
     rng = np.random.default_rng(seed)
@@ -67,6 +80,9 @@ def _session(label: str, session_index: int, seed: int) -> tuple[np.ndarray, np.
     return vibration.astype(np.float32), current.astype(np.float32), pwm
 
 
+# 세션 신호를 512 샘플 윈도우(hop 256)로 자르며 (진동 윈도우, 전류 특징 3개)를 내놓는다.
+# 진동은 윈도우마다 평균(DC)을 빼고, 전류는 평균/RMS/최대절대값만 쓴다.
+# 이 전처리는 edge 쪽 EdgePipeline과 같아야 한다(학습-추론 불일치 방지).
 def _windows(vibration: np.ndarray, current: np.ndarray) -> Iterable[tuple[np.ndarray, np.ndarray]]:
     for start in range(0, len(vibration) - WINDOW + 1, HOP):
         window = vibration[start:start + WINDOW]
@@ -78,6 +94,8 @@ def _windows(vibration: np.ndarray, current: np.ndarray) -> Iterable[tuple[np.nd
         yield window, current_features
 
 
+# 혼동행렬에서 클래스별 recall/F1을 구하고 macro F1(클래스 평균)을 돌려준다. 반환: (macro F1, recall 목록, 혼동행렬).
+# macro를 쓰는 이유: 클래스 크기와 무관하게 모든 클래스를 똑같이 반영하기 위해서다.
 def _macro_metrics(expected: np.ndarray, predicted: np.ndarray,
                    class_count: int) -> tuple[float, list[float], np.ndarray]:
     confusion = np.zeros((class_count, class_count), dtype=np.int64)
@@ -95,6 +113,7 @@ def _macro_metrics(expected: np.ndarray, predicted: np.ndarray,
     return float(np.mean(f1_values)), recalls, confusion
 
 
+# 모델을 eval 모드로 돌려 예측하고 _macro_metrics 로 점수를 낸다(학습 중 validation, 마지막 test에 사용).
 def _evaluate(model: R300Net, vibration: torch.Tensor, current: torch.Tensor,
               expected: torch.Tensor) -> tuple[float, list[float], np.ndarray]:
     model.eval()
@@ -103,6 +122,11 @@ def _evaluate(model: R300Net, vibration: torch.Tensor, current: torch.Tensor,
     return _macro_metrics(expected.cpu().numpy(), predicted, len(LABELS))
 
 
+# 전체 흐름: 세션 생성 -> split별로 윈도우 모으기 -> 'train'만으로 정규화 통계 계산 -> 학습 ->
+# validation macro F1이 가장 좋은 가중치 선택 -> test 평가 -> 모델과 부속 파일 저장.
+# 저장물: save_artifact 가 TorchScript(.pt)와 같은 이름의 .json 사이드카(모델 SHA-256 해시, 라벨,
+# 정규화 통계 포함)를 쓰고, 그 옆에 manifest/confusion/metrics 파일도 쓴다. 로더는 해시로 변조를 확인한다.
+# 주의: 정규화 평균/표준편차는 train에서만 계산한다. validation/test 정보가 섞이면 또 다른 누수가 된다.
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("build/models/model_B_synthetic.pt"))

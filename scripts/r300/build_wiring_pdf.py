@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# [보조 도구] 한국어 배선 가이드(HTML)를 PDF로 변환한다.
+# - 역할: 설치된 Edge/Chrome/Chromium을 headless로 실행해 docs/interface/R300_배선_가이드.html 을 PDF로 인쇄한다.
+# - 읽기 순서: 핵심 읽기 순서(1~13번) 밖의 보조 도구다. 첫 읽기에서는 건너뛰어도 된다.
+# - 다음에 볼 곳: docs/interface/R300_배선_가이드.html (원본), 배선이 지키는 안전 로직은 firmware/avr/r300_safety.c
 """Build the Korean R300 wiring guide with an installed Chromium browser."""
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ BROWSERS = (
 )
 
 
+# PDF를 만들 브라우저를 찾는다: 먼저 Windows 설치 경로(BROWSERS), 없으면 PATH 검색.
+# 하나도 없으면 SystemExit로 안내 메시지를 내고 끝낸다.
 def browser() -> Path:
     for candidate in BROWSERS:
         if candidate.is_file():
@@ -32,6 +38,9 @@ def browser() -> Path:
     raise SystemExit("Edge/Chrome/Chromium is required to build the wiring PDF")
 
 
+# headless 브라우저로 PDF를 만든 뒤 결과를 검사한다.
+# 검사: '%PDF-' 로 시작, 50,000바이트 이상, 페이지 수 6장(페이지 수를 셀 수 있을 때만).
+# 가이드 분량이 바뀌면 여기의 6장 기대값도 같이 고쳐야 한다.
 def main() -> None:
     if not SOURCE.is_file():
         raise SystemExit(f"missing source: {SOURCE}")

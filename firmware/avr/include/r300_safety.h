@@ -1,3 +1,7 @@
+/*
+ * 안전 상태기계(r300_safety_t)와 입력 디바운서(r300_debounce_t) 선언. 구현은 firmware/avr/r300_safety.c.
+ * 상태/원인 enum과 타임아웃 상수는 생성 파일 r300_link.h에 있다.
+ */
 #ifndef R300_SAFETY_H_
 #define R300_SAFETY_H_
 
@@ -9,9 +13,12 @@
 typedef struct {
     r300_safety_state_t state;
     r300_trip_cause_t trip_cause;
+    /* 마지막 HEARTBEAT 엣지 시각(AVR 밀리초 카운터) */
     uint32_t last_heartbeat_ms;
     bool heartbeat_seen;
+    /* 시간 안에 연속 엣지 2개가 확인되었는지 (true여야 정상 HEARTBEAT) */
     bool heartbeat_confirmed;
+    /* ARM 버튼이 디바운스되어 해제된 적이 있어야 다음 ARM 요청을 받아들인다 */
     bool arm_cycle_ready;
 } r300_safety_t;
 

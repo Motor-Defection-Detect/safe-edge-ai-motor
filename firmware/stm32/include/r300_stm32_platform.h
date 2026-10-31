@@ -1,3 +1,7 @@
+/*
+ * STM32 하드웨어 접근 계층 선언(초기화, 센서/ADC 폴링, UART 수신/송신, HEARTBEAT 핀, PWM, 시간).
+ * 구현은 firmware/stm32/r300_stm32_platform.c. 로직 계층은 이 함수들로만 하드웨어에 접근한다.
+ */
 #ifndef R300_STM32_PLATFORM_H_
 #define R300_STM32_PLATFORM_H_
 
@@ -21,6 +25,7 @@ bool r300_stm32_platform_healthy(void);
 void r300_stm32_platform_diagnostics(r300_stm32_platform_diagnostics_t *diagnostics);
 bool r300_stm32_vibration_poll(int16_t xyz[3], uint32_t *timestamp_us);
 bool r300_stm32_current_poll(uint16_t *adc_count);
+/* 아래 health_byte는 Jetson에서 오는 바이트(HEALTH, MOTOR_COMMAND)를 모두 꺼내는 함수 (이름은 HEALTH지만 둘 다 처리) */
 bool r300_stm32_health_byte(uint8_t *byte);
 bool r300_stm32_avr_diag_byte(uint8_t *byte);
 bool r300_stm32_uart_tx_start(const uint8_t *data, size_t bytes);

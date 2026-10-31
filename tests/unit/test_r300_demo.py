@@ -1,3 +1,6 @@
+# [테스트 설명] 데모용 SyntheticSerial 이 내보내는 바이트가 실제 TelemetryParser 로 해석되는 유효한 텔레메트리 프레임인지 지킨다.
+# 대상 소스: edge/r300_demo.py (읽기 순서 13번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

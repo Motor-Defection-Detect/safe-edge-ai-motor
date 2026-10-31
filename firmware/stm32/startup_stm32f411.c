@@ -1,3 +1,8 @@
+/*
+ * 이 파일의 역할: Cortex-M4 시동 코드 - 리셋 시 .data 복사, .bss 0 초기화 후 main 호출, 인터럽트 벡터 테이블.
+ * 이 프로젝트가 쓰는 핸들러는 SysTick과 EXTI1뿐이고 나머지는 무한 루프(Default_Handler)로 연결된다.
+ * 읽기 순서: 보조 파일 (6/13 firmware/stm32/r300_stm32_platform.c 의 SysTick_Handler/EXTI1_IRQHandler 가 여기 연결됨)
+ */
 #include <stdint.h>
 
 extern uint32_t _estack, _sidata, _sdata, _edata, _sbss, _ebss;
@@ -5,11 +10,13 @@ extern int main(void);
 void EXTI1_IRQHandler(void);
 void SysTick_Handler(void);
 
+/* 예기치 않은 예외/인터럽트가 오면 무한 루프에 머문다. */
 static void Default_Handler(void)
 {
     for (;;) { }
 }
 
+/* 리셋 진입점. 초기값이 있는 전역변수를 플래시에서 RAM으로 복사하고 .bss를 0으로 채운 뒤 main()을 호출한다. */
 void Reset_Handler(void)
 {
     uint32_t *source = &_sidata;

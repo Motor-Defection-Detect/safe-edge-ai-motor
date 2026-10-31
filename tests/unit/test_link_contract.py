@@ -1,3 +1,6 @@
+# [테스트 설명] 생성된 Python 계약 모듈의 불변식(프레임 레이아웃, 타이밍 순서)을 지킨다.
+# 대상 소스: edge/r300_link/link_contract.py (scripts/r300/link_contract.py 가 생성)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 """Host unit tier: invariants of the generated link-contract Python module.
 
 These need no compiler and no hardware. They assert the properties the rest of

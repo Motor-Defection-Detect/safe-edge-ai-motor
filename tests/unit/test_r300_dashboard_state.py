@@ -1,3 +1,6 @@
+# [테스트 설명] DashboardStore 가 워커 결과를 보존하고 이벤트 기록 수를 제한(bounded)하는 동작을 지킨다.
+# 대상 소스: edge/r300_dashboard_state.py (읽기 순서 12번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

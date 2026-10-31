@@ -1,3 +1,6 @@
+/*
+ * STM32 런타임 상태 구조체(r300_stm32_runtime_t)와 함수 선언. 구현은 firmware/stm32/r300_stm32_runtime.c.
+ */
 #ifndef R300_STM32_RUNTIME_H_
 #define R300_STM32_RUNTIME_H_
 
@@ -7,11 +10,13 @@
 
 typedef struct {
     r300_stm32_controller_t controller;
+    /* 송신 버퍼: TELEMETRY(1040바이트)와 진단(84바이트) 프레임이 번갈아 같이 쓴다 */
     uint8_t tx_frame[R300_TELEMETRY_BYTES(R300_BLOCK_SAMPLES)];
     uint8_t rx_frame[R300_MOTOR_COMMAND_BYTES];
     size_t tx_bytes;
     uint32_t sample_timestamp_us;
     uint32_t block_timestamp_us;
+    /* 0 A 보정용 ADC 합계 (256개 평균으로 current_zero_count 산출) */
     uint32_t current_zero_sum;
     uint32_t sensor_overruns;
     uint32_t uart_busy_events;
@@ -25,12 +30,14 @@ typedef struct {
     uint32_t diagnostic_sequence;
     uint16_t current_zero_count;
     uint16_t current_zero_samples;
+    /* pwm_duty_permille: 실제 적용 듀티 / requested_*: Jetson이 요청한 값 (조건이 맞아야 적용됨) */
     uint16_t pwm_duty_permille;
     uint16_t pwm_compare;
     uint16_t requested_duty_permille;
     uint16_t avr_diag_flags;
     uint16_t rx_bytes;
     uint16_t rx_target;
+    /* 최신 가속도 raw count (X, Y, Z) - vibration_ready가 true이면 아직 commit 전 */
     int16_t vibration[3];
     uint16_t current_adc;
     bool vibration_ready;

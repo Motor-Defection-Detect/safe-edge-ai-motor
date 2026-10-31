@@ -1,14 +1,22 @@
+# [읽기 가이드] 이 Makefile은 '검증 진입점 모음'이다. 처음엔 아래 세 줄만 이해하면 된다.
+#   make contract  : 계약(JSON)과 생성 파일이 어긋나지 않았는지 검사
+#   make host-unit : 하드웨어 없이 도는 Python 단위 테스트
+#   make integration : C 와 Python 결과가 같은지 비교하는 통합 테스트
+# 읽기 순서: 핵심 읽기 순서(1~13번) 밖의 보조 파일. 다음에 볼 곳: scripts/r300/link_contract.py, tests/
+# 변수는 `make 변수=값` 으로 덮어쓸 수 있다 (예: make PYTHON=python3.11 host-unit).
 # R300 AI Motor - verification entry points.
 #
 # Every target here is called by .claude/embedded/project.json. Nothing in this
 # file touches hardware: flashing, relay control and Jetson deployment are
 # approval boundaries and live in the hil gate, not here.
 
+# 도구 이름 기본값. `?=` 는 환경에서 이미 정해졌으면 그 값을 그대로 쓴다는 뜻이다.
 PYTHON ?= python3
 ARM_CC ?= arm-none-eabi-gcc
 AVR_CC ?= avr-gcc
 AVR_BOARD_FLAGS ?= -DR300_AVR_CPU_HZ=16000000UL -DR300_RELAY_ACTIVE_HIGH=1
 
+# .PHONY: 이 이름들은 파일이 아니라 '작업 이름'이다 (같은 이름의 파일이 있어도 항상 실행).
 .PHONY: generate-contract contract host-unit firmware-headers firmware-logic qt-hmi metrics integration model-synthetic clean
 
 ## Regenerate every consumer from contracts/r300-link.json.

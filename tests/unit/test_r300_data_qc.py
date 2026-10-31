@@ -1,3 +1,6 @@
+# [테스트 설명] data_qc 의 QC 규칙(손실, 샘플레이트, 포화, 얼어붙음, CRC, split 누수, 중복 raw, 메타데이터)이 불량 세션을 실제로 flag 하는지 지킨다.
+# 대상 소스: scripts/r300/data_qc.py (읽기 순서 밖 보조 도구)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import json

@@ -1,3 +1,6 @@
+# [테스트 설명] TorchScript 모델이 해시 사이드카에 묶여 있고 런타임 콜백과 같은 결과를 내는지 지킨다(torch 가 없으면 건너뜀).
+# 대상 소스: edge/r300_model.py (읽기 순서 8번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

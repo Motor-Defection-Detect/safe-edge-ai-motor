@@ -1,3 +1,6 @@
+# [테스트 설명] C 헤더와 Python 계약 모듈이 CRC, 프레임 오프셋, 안전 상태 값에서 서로 같은 결과를 내는지 지킨다.
+# 대상 소스: tests/integration/crc_crosscheck.c 와 edge/r300_link/link_contract.py
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 """Integration tier: the C and Python consumers of the link contract must agree.
 
 Per-profile gates cannot observe this. The STM32 and the ATmega128A build against

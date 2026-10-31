@@ -1,3 +1,6 @@
+# [테스트 설명] vibration_spectrum 이 512 샘플 윈도우의 주파수 성분을 맞게 계산하는지(계약 주파수 bin, 일부 윈도우 거부, DC 오프셋 제거) 지킨다.
+# 대상 소스: edge/r300_analysis.py (읽기 순서 9번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

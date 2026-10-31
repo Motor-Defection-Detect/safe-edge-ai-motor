@@ -1,10 +1,19 @@
+/*
+ * 이 파일의 역할: STM32 메인 루프가 호출하는 '런타임' 계층. 센서 값을 하나의 4채널 샘플로 합치고, TELEMETRY/진단 프레임
+ * 송신 준비, Jetson 수신 바이트(HEALTH/MOTOR_COMMAND) 파싱, AVR 진단 검증, 모터 PWM 허용 조건 판단을 담당한다.
+ * 읽기 순서: 5/13
+ * 다음에 볼 곳: firmware/stm32/r300_stm32_platform.c — 여기서 쓰는 폴링/DMA/UART 함수의 실제 레지스터 구현
+ * 관련: firmware/stm32/r300_stm32_main.c(호출 순서), firmware/stm32/r300_controller.c, firmware/stm32/r300_board_config.c
+ */
 #include "r300_stm32_runtime.h"
 
+/* 리틀 엔디언 16비트 값을 읽는다. */
 static uint16_t get_u16le(const uint8_t *in)
 {
     return (uint16_t)in[0] | (uint16_t)((uint16_t)in[1] << 8);
 }
 
+/* 리틀 엔디언 32비트 값을 읽는다. */
 static uint32_t get_u32le(const uint8_t *in)
 {
     uint32_t value = 0u;
@@ -13,18 +22,21 @@ static uint32_t get_u32le(const uint8_t *in)
     return value;
 }
 
+/* 16비트 값을 리틀 엔디언으로 기록한다. */
 static void put_u16le(uint8_t *out, uint16_t value)
 {
     out[0] = (uint8_t)value;
     out[1] = (uint8_t)(value >> 8);
 }
 
+/* 32비트 값을 리틀 엔디언으로 기록한다. */
 static void put_u32le(uint8_t *out, uint32_t value)
 {
     for (uint8_t index = 0u; index < 4u; ++index)
         out[index] = (uint8_t)(value >> (8u * index));
 }
 
+/* 런타임 전체를 0으로 초기화한다. 모터 PWM compare는 초기 듀티(0%)에서 시작해 부팅 시 모터가 꺼져 있게 한다. */
 void r300_stm32_runtime_init(r300_stm32_runtime_t *runtime)
 {
     if (!runtime) return;
@@ -33,6 +45,10 @@ void r300_stm32_runtime_init(r300_stm32_runtime_t *runtime)
     runtime->pwm_compare = r300_motor_pwm_compare(R300_MOTOR_INITIAL_DUTY_PERMILLE);
 }
 
+/*
+ * 전류 센서의 0 A 기준값을 보정한다. 모터가 꺼져 있을 때(PWM 듀티 0)의 ADC 값 256개를 모아 반올림 평균을 낸다.
+ * 보정이 끝나야 current_calibrated가 true가 되고 샘플 수집과 센서 준비(sensor_ready)가 시작된다.
+ */
 bool r300_stm32_current_zero_sample(r300_stm32_runtime_t *runtime, uint16_t adc_count)
 {
     if (!runtime || runtime->pwm_duty_permille != 0u ||
@@ -48,6 +64,11 @@ bool r300_stm32_current_zero_sample(r300_stm32_runtime_t *runtime, uint16_t adc_
     return runtime->current_calibrated;
 }
 
+/*
+ * MPU-6050 가속도 샘플 1개를 1칸짜리 버퍼에 넣는다. 이름과 달리 인터럽트 안에서 호출되지 않고 메인 루프에서
+ * 호출된다(ISR은 타임스탬프만 기록). 이전 샘플이 아직 commit되지 않았으면 sensor_overruns를 올리는데,
+ * 이 카운터는 0으로 돌아오지 않아 이후 local_healthy가 계속 false가 된다.
+ */
 bool r300_stm32_vibration_isr(r300_stm32_runtime_t *runtime, const int16_t xyz[3],
                               uint32_t timestamp_us)
 {
@@ -62,6 +83,10 @@ bool r300_stm32_vibration_isr(r300_stm32_runtime_t *runtime, const int16_t xyz[3
     return true;
 }
 
+/*
+ * ADC(DMA) 전류 값을 '최신 값 유지' 방식으로 저장한다. ADC와 MPU-6050은 서로 다른 클럭이므로
+ * MPU-6050 타임스탬프가 1 kHz 행을 정하고, 각 행은 그 시점의 최신 ADC 값을 사용한다.
+ */
 bool r300_stm32_current_dma(r300_stm32_runtime_t *runtime, uint16_t adc_count)
 {
     if (!runtime || adc_count > R300_ADC_FULL_SCALE_COUNTS) return false;
@@ -71,6 +96,10 @@ bool r300_stm32_current_dma(r300_stm32_runtime_t *runtime, uint16_t adc_count)
     return true;
 }
 
+/*
+ * 가속도 샘플과 최신 전류 값을 4채널 샘플 [X, Y, Z, 전류(mA)]로 묶어 블록에 추가한다.
+ * 블록의 첫 샘플 시각이 TELEMETRY 헤더 타임스탬프(us)가 된다. 센서 준비/보정/두 입력 확보 전에는 아무것도 하지 않는다.
+ */
 bool r300_stm32_commit_sample(r300_stm32_runtime_t *runtime)
 {
     int16_t sample[R300_CHANNELS];
@@ -84,6 +113,10 @@ bool r300_stm32_commit_sample(r300_stm32_runtime_t *runtime)
     return r300_stm32_sample(&runtime->controller, sample);
 }
 
+/*
+ * 완성된 128샘플 블록을 TELEMETRY 프레임으로 만들어 tx_frame에 준비하고 tx_pending을 세운다.
+ * 이미 송신 대기 중이면 uart_busy_events를 올리고 실패한다(블록은 보존).
+ */
 bool r300_stm32_prepare_tx(r300_stm32_runtime_t *runtime, uint16_t flags)
 {
     if (!runtime || runtime->tx_pending) {
@@ -97,6 +130,11 @@ bool r300_stm32_prepare_tx(r300_stm32_runtime_t *runtime, uint16_t flags)
     return true;
 }
 
+/*
+ * 84바이트 STM32 진단 프레임(카운터, 보정값, 상태 플래그, AVR 진단 스냅샷)을 같은 tx_frame 버퍼에 만든다.
+ * TELEMETRY가 송신 대기 중이면 만들지 않는다(TELEMETRY 우선, 1040바이트 프레임 크기는 변하지 않음).
+ * AVR 비트는 AVR 진단이 최신(300 ms 이내)일 때만 노출된다.
+ */
 bool r300_stm32_prepare_diagnostic(
     r300_stm32_runtime_t *runtime, uint32_t now_ms,
     const r300_stm32_platform_diagnostics_t *platform_diagnostics)
@@ -186,6 +224,7 @@ bool r300_stm32_prepare_diagnostic(
     return true;
 }
 
+/* UART DMA 송신이 끝난 뒤 호출해 송신 대기 상태를 해제하고 다음 프레임을 만들 수 있게 한다. */
 void r300_stm32_tx_complete(r300_stm32_runtime_t *runtime)
 {
     if (!runtime) return;
@@ -193,6 +232,10 @@ void r300_stm32_tx_complete(r300_stm32_runtime_t *runtime)
     runtime->tx_bytes = 0u;
 }
 
+/*
+ * 모터 PWM 듀티(0~1000 permille)를 적용한다. 1000을 넘으면 1000으로 제한한다.
+ * 0이 아닌 듀티는 로컬 센서가 정상일 때만 허용하고, 0(정지)은 항상 허용한다.
+ */
 bool r300_stm32_set_motor(r300_stm32_runtime_t *runtime, uint16_t duty_permille)
 {
     if (!runtime) return false;
@@ -203,12 +246,20 @@ bool r300_stm32_set_motor(r300_stm32_runtime_t *runtime, uint16_t duty_permille)
     return true;
 }
 
+/*
+ * 로컬 취득 건강 상태: 센서 준비 + 전류 보정 완료 + 블록 overrun 없음 + 센서 overrun 없음.
+ * 이 값이 거짓이면 HEARTBEAT 토글이 멈추고 모터 PWM도 0이 된다.
+ */
 bool r300_stm32_local_healthy(const r300_stm32_runtime_t *runtime)
 {
     return runtime && runtime->sensor_ready && runtime->current_calibrated &&
            !runtime->controller.acquisition.overrun && runtime->sensor_overruns == 0u;
 }
 
+/*
+ * TELEMETRY 헤더의 8비트 status를 구성한다: 센서 준비, 로컬 고장, 모터 동작 및 (AVR 진단이 최신일 때) 장전/TRIP/
+ * E-stop/HEARTBEAT 타임아웃. 릴레이 권한은 AVR에 있으며 여기 비트는 표시용(읽기 전용)이다.
+ */
 uint16_t r300_stm32_telemetry_flags(const r300_stm32_runtime_t *runtime)
 {
     uint16_t flags = 0u;
@@ -227,6 +278,10 @@ uint16_t r300_stm32_telemetry_flags(const r300_stm32_runtime_t *runtime)
     return flags;
 }
 
+/*
+ * AVR이 보낸 16바이트 진단 프레임을 검증해 저장한다. SOF/버전/CRC뿐 아니라 상태-원인-플래그 일관성
+ * (AVR의 r300_avr_diagnostic_pack과 같은 규칙)과 시퀀스 증가도 확인한다. 실패하면 카운터만 올린다.
+ */
 bool r300_stm32_avr_diag_receive(r300_stm32_runtime_t *runtime,
                                  const uint8_t frame[R300_AVR_DIAGNOSTIC_BYTES],
                                  uint32_t received_at_ms)
@@ -282,6 +337,10 @@ bool r300_stm32_avr_diag_receive(r300_stm32_runtime_t *runtime,
     return true;
 }
 
+/*
+ * AVR 진단이 300 ms 넘게 갱신되지 않으면 무효로 만든다(표시용 상태가 오래된 값으로 남지 않게).
+ * 반환값은 현재 AVR 진단이 유효한지 여부.
+ */
 bool r300_stm32_avr_diag_fresh(r300_stm32_runtime_t *runtime, uint32_t now_ms)
 {
     if (!runtime || !runtime->avr_diag_valid) return false;
@@ -293,6 +352,10 @@ bool r300_stm32_avr_diag_fresh(r300_stm32_runtime_t *runtime, uint32_t now_ms)
     return runtime->avr_diag_valid;
 }
 
+/*
+ * Jetson MOTOR_COMMAND(18바이트) 프레임을 검증해 요청 듀티/방향을 저장한다. 듀티 0~1000, 방향은 STOP/FORWARD만,
+ * STOP이면 듀티 0, CRC, 시퀀스 증가를 확인한다. 저장만 하며 실제 PWM 반영은 motor_service가 한다.
+ */
 bool r300_stm32_motor_command_receive(r300_stm32_runtime_t *runtime,
                                       const uint8_t frame[R300_MOTOR_COMMAND_BYTES],
                                       uint32_t received_at_ms)
@@ -325,6 +388,10 @@ bool r300_stm32_motor_command_receive(r300_stm32_runtime_t *runtime,
     return true;
 }
 
+/*
+ * 메인 루프마다 호출되어 PWM을 결정한다. 명령이 300 ms 안에 갱신되었고, Jetson HEALTH가 유효하며
+ * LINK_HEALTHY이고, 로컬이 정상이며, 방향이 FORWARD일 때만 요청 듀티를 적용하고 그 외에는 모두 0으로 내린다(fail-safe).
+ */
 bool r300_stm32_motor_service(r300_stm32_runtime_t *runtime, uint32_t now_ms)
 {
     if (!runtime) return false;
@@ -340,6 +407,12 @@ bool r300_stm32_motor_service(r300_stm32_runtime_t *runtime, uint32_t now_ms)
     return r300_stm32_set_motor(runtime, runtime->requested_duty_permille);
 }
 
+/*
+ * Jetson UART 수신 바이트를 하나씩 받아 프레임을 조립하는 상태기계. 첫 바이트로 종류를 구분한다:
+ * 0x55 0xAA(HEALTH, SOF 0xAA55의 리틀 엔디언) 또는 0x3C 0xC3(MOTOR_COMMAND, SOF 0xC33C).
+ * 두 번째 바이트가 맞지 않으면 그 바이트를 새 프레임 시작으로 다시 해석한다.
+ * true는 프레임 하나가 완성되어 검증까지 통과했을 때만 반환한다.
+ */
 bool r300_stm32_rx_byte(r300_stm32_runtime_t *runtime, uint8_t byte, uint32_t now_ms)
 {
     bool accepted;

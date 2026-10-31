@@ -1,3 +1,7 @@
+/*
+ * STM32 컨트롤러 상태(r300_stm32_controller_t)와 진단 스냅샷 구조체, API 선언.
+ * 구현은 firmware/stm32/r300_controller.c.
+ */
 #ifndef R300_CONTROLLER_H_
 #define R300_CONTROLLER_H_
 
@@ -6,6 +10,7 @@
 typedef struct {
     r300_acquisition_t acquisition;
     r300_stm32_health_t health;
+    /* 다음에 보낼 TELEMETRY 시퀀스 번호 */
     uint32_t sequence;
     uint32_t dropped_blocks;
     uint32_t invalid_health_frames;

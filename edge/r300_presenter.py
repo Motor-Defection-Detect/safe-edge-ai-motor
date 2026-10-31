@@ -1,3 +1,14 @@
+# ==============================================================================
+# edge/r300_presenter.py
+# 역할: 워커 스레드 쪽 '번역기'. 추론 결과(WindowResult)와 메트릭 dict 를 화면용 상태(DashboardStore)로 바꿔 넣는다.
+#       UI 스레드는 store 를 읽기만 하고 계산하지 않는다.
+# 읽기 순서: 12/13 중 첫 번째  (12번은 이 파일 -> r300_dashboard_state.py -> r300_dashboard.py 순서로 읽는다)
+# 다음에 볼 곳: edge/r300_dashboard_state.py — 이 파일이 값을 채워 넣는 공유 상태 저장소
+# 관련: edge/r300_application.py (조립), edge/r300_analysis.py (FFT 호출), edge/r300_receiver.py (메트릭 키를 만드는 쪽)
+# 핵심 설계: AI 조건(CONDITION)과 안전 상태(SAFETY)는 별도 필드, 별도 이벤트 카테고리로 분리한다.
+#            AI 는 조언일 뿐이며 안전 판단과 섞이지 않는다. 릴레이 상태는 AVR 진단에서만 읽는다.
+# ==============================================================================
+
 """Worker-owned projection from inference results into dashboard state."""
 from __future__ import annotations
 
@@ -10,11 +21,14 @@ from r300_link import WindowResult
 from r300_link import link_contract as lc
 
 
+# 두 입구가 있다: publish_windows(추론 결과 -> 파형/FFT/AI 조건/투표)와 publish_metrics(메트릭 -> 5개 건강 상태 + Safety 상태).
+# 둘 다 워커 스레드에서 호출되며 store 에 쓰기만 한다. 상태가 바뀔 때만 이벤트(CONDITION / HEALTH / SAFETY)를 남긴다.
 class DashboardPresenter:
     def __init__(self, store: DashboardStore,
                  on_event: Callable[[str, str, str], None] | None = None) -> None:
         self.store = store
         self._on_event = on_event
+        # 파형 버퍼는 1초(SAMPLE_RATE_HZ=1000샘플) 길이. 안전 표시의 초기값은 UNKNOWN(AVR 진단 없음).
         self._waveform: deque[tuple[float, float, float]] = deque(maxlen=lc.SAMPLE_RATE_HZ)
         self._have_window = False
         self._metrics: dict[str, float] = {}
@@ -22,6 +36,8 @@ class DashboardPresenter:
         self._health: dict[str, str] = {}
         self._safety = ("UNKNOWN", "AVR diagnostics unavailable")
 
+    # 창 1개마다: 표시용(g) 값으로 파형을 갱신하되, 첫 창은 512샘플 전부, 이후는 새로 추가된 hop(256)만 이어 붙여 겹침 중복을 피한다.
+    # FFT(vibration_spectrum)는 여기 워커 스레드에서 계산한다. 조건(NORMAL/WARNING)이 바뀌면 CONDITION 이벤트.
     def publish_windows(self, windows: tuple[WindowResult, ...], timestamp: str) -> None:
         for result in windows:
             display = result.display_vibration or result.vibration
@@ -42,7 +58,13 @@ class DashboardPresenter:
                                    "CONDITION")
                 self._condition = result.condition
 
+    # [구간 지도] publish_metrics() — 메트릭 한 묶음을 화면 상태로
+    #  1) 메트릭 병합, 필요한 값을 current.get(키, 기본값)으로 추출(기본값 의미는 항목마다 다르니 새 키를 추가할 땐 확인)
+    #  2) 파생 판정: 링크 stale, STM 오버런/센서 오류, serial/sensor 저하, AI 실패/저하
+    #  3) 5개 건강 상태(serial/sensor/ai/avr/motor) 계산 -> store.update_health, 바뀌면 HEALTH 이벤트
+    #  4) Safety 상태(UNKNOWN/DISARMED/ARMED/TRIPPED) 결정 -> AVR 실시간 플래그 상세 덧붙임 -> store.update_safety, 바뀌면 SAFETY 이벤트
     def publish_metrics(self, metrics: Mapping[str, float], timestamp: str = "") -> None:
+        # --- 구간 1: 메트릭 병합, 입력 값 추출 ---
         self._metrics.update(metrics)
         self.store.update_metrics(self._metrics)
         current = self._metrics
@@ -60,6 +82,7 @@ class DashboardPresenter:
         stm_diagnostic_stale = bool(current.get("stm_diagnostic_stale", 1.0))
         stm_keepalive_valid = bool(current.get("stm_keepalive_valid", 0.0))
         stm_local_healthy = bool(current.get("stm_local_healthy", 0.0))
+        # --- 구간 2: 파생 판정 ---
         stm_diagnostic_fresh = stm_diagnostic_valid and not stm_diagnostic_stale
         avr_live_valid = stm_diagnostic_fresh and bool(current.get("stm_avr_live_valid", 0.0))
         diagnostic_age_ms = current.get("stm_diagnostic_age_ms",
@@ -67,6 +90,7 @@ class DashboardPresenter:
         stm_diagnostic_link_current = (stm_diagnostic_fresh and diagnostic_age_ms >= 0.0 and
                                        diagnostic_age_ms <= lc.STM_DIAGNOSTIC_PERIOD_MS +
                                        lc.HEARTBEAT_TOGGLE_MS)
+        # STM_DIAGNOSTIC(1초 주기)이 최근(1.1초 이내)이면 텔레메트리가 끊겨도 '링크 자체는 살아 있음'으로 보아 stale 대신 센서 장애로 표시한다.
         link_stale = stale and not stm_diagnostic_link_current
         stm_overrun = stm_diagnostic_fresh and bool(
             current.get("stm_acquisition_overrun", 0.0) or
@@ -105,6 +129,9 @@ class DashboardPresenter:
                        current.get("e2e_p95_ms", 0.0) > lc.PACKET_TO_UI_P95_TARGET_MS or
                        not current.get("storage_ok", 1.0) or
                        current.get("inference_queue_drops", 0.0) > 0.0)
+        # --- 구간 3: 건강 상태 5개 ---
+        # motor 는 물리 전류/회전/릴레이 피드백이 없어 OK 로 만들지 않고 UNKNOWN(또는 ERROR/STALE)만 낸다.
+        # 삼항식이 중첩돼 있고 항목마다 우선순위가 다르니, 각 항목을 위에서부터 첫 번째로 참인 조건 순서대로 읽는다.
         health = {"serial": "ERROR" if not connected else
                             ("STALE" if link_stale else
                              ("DEGRADED" if stale or serial_degraded else "OK")),
@@ -129,6 +156,9 @@ class DashboardPresenter:
             self._append_event(timestamp, "health " + ", ".join(
                 f"{name}={state}" for name, state in health.items()), "HEALTH")
         self._health = health
+        # --- 구간 4: Safety 상태 ---
+        # 릴레이 상태는 TELEMETRY 의 AVR 비트(AVR 진단)에서만 읽고, 진단이 없으면 추측하지 않고 UNKNOWN 으로 둔다.
+        # ARMED 의 'relay command' 는 접점 피드백이 아니다. UI/AI 에는 릴레이 권한이 없다.
         if not connected or link_stale:
             safety = ("UNKNOWN", "AVR diagnostics unavailable")
         elif not avr_valid or stale:
@@ -165,6 +195,7 @@ class DashboardPresenter:
                                "SAFETY")
         self._safety = safety
 
+    # store 에 이벤트를 추가하고, on_event 콜백(R300Application 이 JSONL 'dashboard_event' 로 기록)도 호출한다.
     def _append_event(self, timestamp: str, message: str, category: str) -> None:
         self.store.append_event(timestamp, message, category)
         if self._on_event:

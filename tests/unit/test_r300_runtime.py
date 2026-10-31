@@ -1,3 +1,6 @@
+# [테스트 설명] 프레임 파서(CRC, 재동기화, 순서/재시작), 이벤트 로거, 512/256 윈도우 파이프라인, 투표기 동작을 지킨다.
+# 대상 소스: edge/r300_link/runtime.py (읽기 순서 7번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import json

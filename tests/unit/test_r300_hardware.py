@@ -1,3 +1,6 @@
+# [테스트 설명] 모터 요청이 명시적이고 상한과 시간 제한이 있는지, AVR 안전 증거가 완전해야 모터가 준비되는지(fail-closed) 지킨다.
+# 대상 소스: edge/r300_hardware.py (읽기 순서 밖)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

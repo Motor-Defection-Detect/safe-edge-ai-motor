@@ -1,3 +1,6 @@
+# [테스트 설명] 펌웨어의 하드웨어 무관 로직(AVR 안전 트립/재무장, STM32 프로토콜/컨트롤러/런타임)을 호스트 컴파일러로 실제 실행해 확인한다.
+# 대상 소스: firmware/avr/r300_safety.c (1번), firmware/stm32/r300_controller.c (3번), r300_protocol.c (4번) 등
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import shutil

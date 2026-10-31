@@ -1,3 +1,6 @@
+# [테스트 설명] 워커 결과가 대시보드 상태로 올바르게 투영되는지(AVR 진단, 모델 실패, STM32 재시작, 애플리케이션 정지) 지킨다.
+# 대상 소스: edge/r300_presenter.py (읽기 순서 12번 근처)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

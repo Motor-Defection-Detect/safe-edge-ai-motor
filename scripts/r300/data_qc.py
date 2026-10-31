@@ -1,3 +1,21 @@
+# [보조 도구] 수집 세션(run) 산출물을 자동 QC 규칙으로 검사해 JSON 리포트를 만든다.
+# - 역할: 학습에 쓰기 전에 데이터 품질과 split 누수를 걸러낸다. 입력은 세션별 .metadata.json (옆의
+#   .index.csv, .raw.bin, .metrics.jsonl 을 함께 읽는다).
+# - 읽기 순서: 핵심 읽기 순서(1~13번) 밖의 보조 도구다. 7번(edge/r300_link/runtime.py)을 읽은 뒤에 보면 좋다.
+# - 다음에 볼 곳: edge/r300_link/runtime.py 의 EventLogger(이 산출물을 만드는 쪽), 테스트는 tests/unit/test_r300_data_qc.py
+# - 관련 문서: docs/interface/data-manifest-schema.md, docs/interface/test-plan.md
+#
+# [QC 규칙 요약] 결과의 flags 에 'QC-0xx ...' 문자열로 나온다.
+# - QC-001 패킷 무결성: 인덱스/raw/CRC 불일치, 패킷 gap(손실) 비율 0.5% 초과
+# - QC-002 샘플레이트: STM32 타임스탬프 기준 계약값에서 +/-1% 초과
+# - QC-003 포화(clipping): 센서 풀스케일의 95% 이상인 값이 전체의 1% 초과
+# - QC-004 센서 이상: 센서 오류 플래그, 또는 한 채널이 1초(= SAMPLE_RATE_HZ 샘플) 이상 값이 얼어붙음
+# - QC-005 시작 구간: 시작 제외 5~10초, 제외 후 남는 샘플이 있어야 함
+# - QC-006 메타데이터/세션 구성: 필수 항목, 클래스 계약, 90초 이상 등
+# - QC-007 PWM 조건: 60/75/90% 층화, 매니페스트 PWM과 STM32 모터 동작 증거 일치
+# - QC-008 split: 세션마다 train/validation/test 배정, 클래스당 4/1/1, 한 run이 여러 split에 걸치면 안 됨
+# - QC-009 클래스 균형: 클래스 계약의 모든 클래스 존재, 세션 수 차이 1 이하, 클래스당 6회 이상
+# - QC-010 중복: run_id 중복, 서로 다른 run_id에 같은 raw 데이터
 """Audit R300 run artifacts using the automatable QC rules from R300-MLD-001."""
 from __future__ import annotations
 
@@ -19,7 +37,9 @@ from r300_link import link_contract as lc
 from r300_link import ConditionVoter, telemetry_status_valid
 from r300_analysis import vibration_spectrum
 
+# 보정값이 없거나 잘못됐을 때 쓰는 대체 진동 스케일(g/count). 0.00048828125 = 1/2048 이다.
 _DEFAULT_VIBRATION_G_PER_COUNT = (0.00048828125,) * 3
+# 메타데이터에 기록돼야 하는 '이상 판정 투표' 정책. ConditionVoter의 상수와 같아야 QC-006 을 통과한다.
 _CONDITION_POLICY = {
     "window_size": ConditionVoter.WINDOW_SIZE,
     "required_abnormal": ConditionVoter.REQUIRED_ABNORMAL,
@@ -28,6 +48,8 @@ _CONDITION_POLICY = {
 }
 
 
+# metrics.jsonl 에서 누적 카운터(crc_errors 등)의 최댓값을 구한다.
+# 음수/비정수/불리언 같은 이상한 값은 QC-001 플래그로 남기고 건너뛴다.
 def _max_counter(records: list[dict[str, Any]], field: str, flags: list[str]) -> int:
     values: list[int] = []
     for record in records:
@@ -40,6 +62,8 @@ def _max_counter(records: list[dict[str, Any]], field: str, flags: list[str]) ->
     return max(values, default=0)
 
 
+# xxx.metadata.json 이름에서 같은 세션의 index.csv, raw.bin, metrics.jsonl 경로를 유도한다.
+# 이름이 .metadata.json 으로 끝나지 않으면 ValueError.
 def _paths(metadata_path: Path) -> tuple[Path, Path, Path]:
     suffix = ".metadata.json"
     if not metadata_path.name.endswith(suffix):
@@ -49,6 +73,7 @@ def _paths(metadata_path: Path) -> tuple[Path, Path, Path]:
             Path(str(stem) + ".metrics.jsonl"))
 
 
+# 리포트 출력 경로가 원본 세션 파일(증거)을 덮어쓰지 않도록 막는다.
 def _validate_output_path(output: Path, metadata_paths: list[Path]) -> None:
     protected: set[Path] = set()
     for metadata_path in metadata_paths:
@@ -61,6 +86,11 @@ def _validate_output_path(output: Path, metadata_paths: list[Path]) -> None:
         raise ValueError("QC output must not overwrite a source session artifact")
 
 
+# 세션 1개를 검사한다. 입력: .metadata.json 경로. 출력: 측정값 + flags 목록이 든 dict.
+# 흐름: (1) 메타데이터 검증(QC-006/007/008) -> (2) 인덱스 행마다 raw 프레임을 CRC로 다시 검증하고
+#       손실/샘플레이트/포화/얼어붙음을 누적(QC-001~004) -> (3) 시작 구간을 뺀 통계와 주파수 특징 계산.
+# 주의: 길어 보이지만 대부분 '이상하면 flag 추가' 패턴이다. 예외를 던지지 않고 flag로 모으는 것이 의도다.
+# 포화 한계: 진동은 +/-16 g, 전류는 5000 mA 풀스케일의 95%로 계산한다.
 def audit_session(metadata_path: Path) -> dict[str, Any]:
     """Return measured values and QC flags for one immutable acquisition session."""
     index_path, raw_path, metrics_path = _paths(metadata_path)
@@ -405,6 +435,9 @@ def audit_session(metadata_path: Path) -> dict[str, Any]:
     }
 
 
+# 여러 세션을 묶어 '데이터셋 전체' 규칙을 검사한다(세션 단위 검사는 audit_session 결과를 재사용).
+# 핵심: 같은 run_id가 여러 split(train/validation/test)에 있으면 QC-008 — 학습 데이터 누수 방지.
+# 그 밖에 중복 run/raw(QC-010), 클래스 균형과 세션 수(QC-009), 클래스당 4/1/1 split(QC-008)을 본다.
 def audit_sessions(metadata_paths: list[Path]) -> dict[str, Any]:
     sessions = [audit_session(path) for path in metadata_paths]
     flags: list[str] = []
@@ -455,6 +488,8 @@ def audit_sessions(metadata_paths: list[Path]) -> dict[str, Any]:
                                           for flag in session["flags"]]))}
 
 
+# 명령행 진입점. 사용: data_qc.py <metadata.json ...> [--output 리포트.json] [--strict]
+# --strict 이면 flag가 하나라도 있을 때 종료 코드 1. 입출력 오류는 코드 2.
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("metadata", nargs="+", type=Path)

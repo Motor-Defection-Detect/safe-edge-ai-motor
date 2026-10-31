@@ -1,6 +1,16 @@
+/*
+ * 이 파일의 역할: STM32 진입점과 메인 루프. 한 바퀴마다 AVR 진단 수신 -> Jetson 바이트 수신 -> 전류/진동 샘플 취득 ->
+ * HEARTBEAT 갱신 -> 모터 PWM 서비스 -> TELEMETRY/진단 송신 -> PB8 출력 순으로 처리한다(블로킹 없는 폴링 루프).
+ * 읽기 순서: 보조 파일 (5/13 firmware/stm32/r300_stm32_runtime.c 가 호출되는 함수들의 실체)
+ * 관련: firmware/stm32/r300_stm32_platform.c
+ */
 #include "r300_stm32_platform.h"
 #include "r300_stm32_runtime.h"
 
+/*
+ * 플랫폼 초기화에 실패하면 PWM과 HEARTBEAT를 끄고 영구 정지한다(HEARTBEAT 엣지가 끊기므로 AVR이 이를 감지한다).
+ * AVR 진단은 SOF 0x5AA5(리틀 엔디언으로 0xA5, 0x5A)를 찾아 16바이트를 모아 처리한다.
+ */
 int main(void)
 {
     r300_stm32_runtime_t runtime;

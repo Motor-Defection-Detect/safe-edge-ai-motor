@@ -1,3 +1,10 @@
+/*
+ * 이 파일의 역할: STM32F411 레지스터 직접 제어 - 96 MHz 클럭, GPIO, I2C2(MPU-6050), EXTI1(DRDY), TIM2/3/4,
+ * ADC1+DMA2(전류), USART2+DMA1(Jetson 통신), USART1(AVR 진단 수신), SysTick. HAL 없이 로컬 레지스터 구조체 사용.
+ * 읽기 순서: 6/13 (훑어보기용 - 함수 이름과 위 주석 위주로 보고 비트 값은 RM0383 참고)
+ * 다음에 볼 곳: edge/r300_link/runtime.py — 이제 Jetson(엣지) 쪽에서 이 프레임들을 어떻게 받는지
+ * 관련: firmware/stm32/include/r300_stm32f411_regs.h(레지스터 정의), firmware/stm32/include/r300_board_config.h(보드 상수)
+ */
 #include "r300_board_config.h"
 #include "r300_link.h"
 #include "r300_stm32_platform.h"
@@ -69,6 +76,9 @@ _Static_assert(R300_SYSCLK_HZ /
                ((R300_MOTOR_PWM_PRESCALER + 1u) * R300_MOTOR_PWM_PERIOD_TICKS) ==
                R300_MOTOR_PWM_HZ, "PWM constants must produce the requested frequency");
 
+/*
+ * 레지스터의 특정 비트가 지정한 상태(set=true면 1, false면 0)가 될 때까지 제한 횟수만큼 기다린다. 하드웨어가 응답하지 않아도 무한 대기하지 않도록 타임아웃이 있다.
+ */
 static bool wait_bits(volatile uint32_t *reg, uint32_t mask, bool set)
 {
     for (uint32_t timeout = 1000000u; timeout != 0u; --timeout)
@@ -76,6 +86,7 @@ static bool wait_bits(volatile uint32_t *reg, uint32_t mask, bool set)
     return false;
 }
 
+/* 레지스터의 마스크된 필드가 기대 값이 될 때까지 제한 횟수만큼 기다린다(클럭 소스 전환 확인 등). */
 static bool wait_value(volatile uint32_t *reg, uint32_t mask, uint32_t value)
 {
     for (uint32_t timeout = 1000000u; timeout != 0u; --timeout)
@@ -83,21 +94,25 @@ static bool wait_value(volatile uint32_t *reg, uint32_t mask, uint32_t value)
     return false;
 }
 
+/* GPIO 핀 모드 설정(0 입력, 1 출력, 2 대체기능, 3 아날로그). 핀당 2비트 필드만 바꾼다. */
 static void gpio_mode(r300_gpio_regs_t *gpio, uint8_t pin, uint32_t mode)
 {
     gpio->MODER = (gpio->MODER & ~(3u << (pin * 2u))) | (mode << (pin * 2u));
 }
 
+/* GPIO 출력 속도 필드(핀당 2비트)를 설정한다. */
 static void gpio_speed(r300_gpio_regs_t *gpio, uint8_t pin, uint32_t speed)
 {
     gpio->OSPEEDR = (gpio->OSPEEDR & ~(3u << (pin * 2u))) | (speed << (pin * 2u));
 }
 
+/* GPIO 풀업/풀다운 필드(핀당 2비트)를 설정한다. */
 static void gpio_pull(r300_gpio_regs_t *gpio, uint8_t pin, uint32_t pull)
 {
     gpio->PUPDR = (gpio->PUPDR & ~(3u << (pin * 2u))) | (pull << (pin * 2u));
 }
 
+/* 핀의 대체기능(AF) 번호를 설정한다. AFR은 핀 0~7과 8~15가 두 레지스터로 나뉘고 핀당 4비트다. */
 static void gpio_af(r300_gpio_regs_t *gpio, uint8_t pin, uint8_t af)
 {
     uint8_t bank = pin >= 8u ? 1u : 0u;
@@ -105,6 +120,10 @@ static void gpio_af(r300_gpio_regs_t *gpio, uint8_t pin, uint8_t af)
     gpio->AFR[bank] = (gpio->AFR[bank] & ~(15u << shift)) | ((uint32_t)af << shift);
 }
 
+/*
+ * I2C 상태 비트를 기다린다. 오류 플래그가 뜨거나 시간이 초과되면 sensor_bus_errors를 올리고 STOP을 보낸 뒤 false를 반환한다.
+ * 이 카운터는 한번 올라가면 건강 판정(platform_healthy)을 계속 실패시킨다.
+ */
 static bool i2c_wait(volatile uint32_t *reg, uint32_t mask, bool set)
 {
     for (uint32_t timeout = 100000u; timeout != 0u; --timeout) {
@@ -121,6 +140,7 @@ static bool i2c_wait(volatile uint32_t *reg, uint32_t mask, bool set)
     return false;
 }
 
+/* START 조건을 보내고 7비트 주소 + R/W 비트를 전송해 ADDR 응답을 기다린다. */
 static bool i2c_address(uint8_t address, bool read)
 {
     R300_I2C2->CR1 |= I2C_CR1_START;
@@ -129,6 +149,7 @@ static bool i2c_address(uint8_t address, bool read)
     return i2c_wait(&R300_I2C2->SR1, I2C_SR1_ADDR, true);
 }
 
+/* STM32 I2C 규칙에 따라 SR1 다음 SR2를 읽어 ADDR 플래그를 지운다(읽기 순서 자체가 의미 있음). */
 static void i2c_clear_address(void)
 {
     volatile uint32_t clear = R300_I2C2->SR1;
@@ -136,6 +157,7 @@ static void i2c_clear_address(void)
     (void)clear;
 }
 
+/* MPU-6050 레지스터 1개에 값을 쓴다(레지스터 주소 + 데이터 전송 후 STOP). */
 static bool mpu_write(uint8_t reg, uint8_t value)
 {
     if (!i2c_wait(&R300_I2C2->SR2, I2C_SR2_BUSY, false) ||
@@ -150,6 +172,10 @@ static bool mpu_write(uint8_t reg, uint8_t value)
     return true;
 }
 
+/*
+ * MPU-6050 레지스터를 연속으로 읽는다(주소 쓰기 -> repeated START -> 읽기). STM32F4 I2C는 수신 바이트 수에 따라
+ * ACK/STOP 타이밍을 직접 맞춰야 하므로 1바이트, 2바이트 이상, 마지막 3바이트의 처리가 각각 다르다.
+ */
 static bool mpu_read(uint8_t reg, uint8_t *data, size_t bytes)
 {
     if (!data || bytes == 0u || !i2c_wait(&R300_I2C2->SR2, I2C_SR2_BUSY, false) ||
@@ -185,6 +211,10 @@ static bool mpu_read(uint8_t reg, uint8_t *data, size_t bytes)
     return true;
 }
 
+/*
+ * 내부 16 MHz HSI를 PLL로 96 MHz까지 올린다(PLLM=16, PLLN=192, PLLP=2, PLLQ=4). 전압 스케일1, 플래시 대기 상태,
+ * APB1 분주 2(48 MHz)를 함께 설정하고 PLL 락/클럭 전환을 확인한다. 실패하면 false를 반환한다.
+ */
 static bool clock_init(void)
 {
     R300_RCC->APB1ENR |= R300_BIT(28);
@@ -198,6 +228,12 @@ static bool clock_init(void)
     return wait_value(&R300_RCC->CFGR, RCC_CFGR_SWS_MASK, RCC_CFGR_SWS_PLL);
 }
 
+/*
+ * 시스템 전체 초기화 후 성공 여부를 반환한다. 순서: 클럭 -> 주변장치 클럭 -> GPIO(안전 레벨을 출력 모드 전에 미리 기록) ->
+ * TIM2(1 MHz 타임스탬프) -> I2C2/MPU-6050(WHO_AM_I 확인, 1 kHz, +/-16 g, DRDY) -> EXTI1(PB1) -> SysTick(1 ms) ->
+ * TIM4 PWM(PB6) -> TIM3 트리거 ADC1 + DMA2(전류 1 kHz) -> USART2+DMA1(Jetson, 921600 bps) -> USART1(AVR 진단 수신).
+ * 센서 초기화가 실패하면 false이고, main은 PWM/HEARTBEAT을 끈 채 멈춘다.
+ */
 bool r300_stm32_platform_init(void)
 {
     if (!clock_init()) return false;
@@ -288,6 +324,11 @@ bool r300_stm32_platform_init(void)
     return sensor_bus_errors == 0u;
 }
 
+/*
+ * 플랫폼 건강 판정(센서 준비의 기반). 100 ms마다 MPU-6050 WHO_AM_I를 다시 읽어 센서 분리를 감지하고,
+ * I2C/UART/DMA/ADC 오류, 오버런, 그리고 두 센서 스트림이 100 ms 넘게 멈췄는지를 모두 확인한다.
+ * 카운터형 오류는 한번 발생하면 그대로 남아 이 함수가 계속 false를 반환한다.
+ */
 bool r300_stm32_platform_healthy(void)
 {
     uint32_t now_us = R300_TIM2->CNT;
@@ -313,6 +354,7 @@ bool r300_stm32_platform_healthy(void)
            (uint32_t)(now_us - last_vibration_us) <= R300_SENSOR_STALE_US;
 }
 
+/* STM32 진단 프레임에 실을 플랫폼 오류/오버런 카운터와 DMA/ADC 오류 플래그를 현재 값으로 복사한다. */
 void r300_stm32_platform_diagnostics(r300_stm32_platform_diagnostics_t *diagnostics)
 {
     if (!diagnostics) return;
@@ -327,6 +369,10 @@ void r300_stm32_platform_diagnostics(r300_stm32_platform_diagnostics_t *diagnost
     diagnostics->adc_peripheral_errors = R300_ADC1->SR & R300_BIT(5);
 }
 
+/*
+ * MPU-6050 데이터 준비(DRDY, PB1 상승 엣지) 인터럽트. 가능한 짧게 TIM2 타임스탬프만 기록한다.
+ * I2C 읽기는 인터럽트에서 하지 않고 메인 루프(vibration_poll)가 하며, 이미 대기 중이면 overrun으로 센다.
+ */
 void EXTI1_IRQHandler(void)
 {
     R300_EXTI->PR = R300_BIT(1);
@@ -335,11 +381,16 @@ void EXTI1_IRQHandler(void)
     vibration_pending = true;
 }
 
+/* 1 ms마다 system_ms를 증가시킨다(r300_stm32_millis의 기반, 타임아웃 판정용 밀리초 시간). */
 void SysTick_Handler(void)
 {
     ++system_ms;
 }
 
+/*
+ * DRDY 이벤트가 대기 중이면 MPU-6050에서 7바이트(INT_STATUS + 가속도 6바이트)를 읽어 X/Y/Z로 변환한다.
+ * 타임스탬프는 읽은 시각이 아니라 ISR이 기록한 DRDY 시각이다. I2C 오류가 한 번이라도 있었으면 읽지 않는다.
+ */
 bool r300_stm32_vibration_poll(int16_t xyz[3], uint32_t *timestamp_us)
 {
     uint8_t raw[7];
@@ -358,6 +409,10 @@ bool r300_stm32_vibration_poll(int16_t xyz[3], uint32_t *timestamp_us)
     return true;
 }
 
+/*
+ * ADC DMA 링(128개)의 최신 값을 폴링한다. DMA가 진행했으면 가장 최근 샘플을 돌려주고, 마지막 폴링 이후
+ * 128 ms(링 한 바퀴) 이상 지났으면 adc_overruns를 올린다. 중간 샘플은 건너뛸 수 있다(최신 값 유지 방식).
+ */
 bool r300_stm32_current_poll(uint16_t *adc_count)
 {
     uint16_t index;
@@ -379,6 +434,10 @@ bool r300_stm32_current_poll(uint16_t *adc_count)
     return true;
 }
 
+/*
+ * Jetson UART 수신용 DMA 순환 버퍼(64바이트)에서 읽을 바이트가 있으면 하나 꺼낸다. DMA 쓰기 위치(NDTR)와 읽기 위치를 비교하는
+ * 폴링 방식이다. UART 오류 플래그가 있으면 데이터 레지스터를 읽어 지우고 uart_errors를 올린다.
+ */
 bool r300_stm32_health_byte(uint8_t *byte)
 {
     uint16_t write_index;
@@ -399,6 +458,9 @@ bool r300_stm32_health_byte(uint8_t *byte)
     return true;
 }
 
+/*
+ * AVR 진단 UART(USART1)에서 수신된 바이트가 있으면 1바이트 반환한다(DMA 없이 RXNE 폴링). 오류가 있으면 avr_uart_errors를 올린다.
+ */
 bool r300_stm32_avr_diag_byte(uint8_t *byte)
 {
     uint32_t status;
@@ -414,12 +476,19 @@ bool r300_stm32_avr_diag_byte(uint8_t *byte)
     return true;
 }
 
+/*
+ * Jetson 쪽 송신 DMA(DMA1 Stream6)가 진행 중인지 반환한다. 호출될 때 DMA 오류 플래그도 uart_errors에 반영한다.
+ */
 bool r300_stm32_uart_tx_busy(void)
 {
     if ((R300_DMA1->HISR & DMA_STREAM6_ERRORS) != 0u) ++uart_errors;
     return (R300_DMA1->STREAM[6].CR & DMA_STREAM_EN) != 0u;
 }
 
+/*
+ * 프레임을 USART2 DMA로 비동기 송신 시작한다. 이미 송신 중이거나 크기가 0/65535 초과면 false.
+ * data 버퍼는 송신이 끝날 때까지 유지되어야 한다(runtime의 tx_frame이 그 역할).
+ */
 bool r300_stm32_uart_tx_start(const uint8_t *data, size_t bytes)
 {
     if (!data || bytes == 0u || bytes > 65535u || r300_stm32_uart_tx_busy()) return false;
@@ -431,17 +500,22 @@ bool r300_stm32_uart_tx_start(const uint8_t *data, size_t bytes)
     return true;
 }
 
+/*
+ * HEARTBEAT 출력 PB8을 level로 설정한다. BSRR을 쓰므로 다른 핀에 영향을 주지 않는다. AVR PE4로 연결된다.
+ */
 void r300_stm32_heartbeat_write(bool level)
 {
     R300_GPIOB->BSRR = R300_BIT(level ? 8u : 24u);
 }
 
+/* TIM4 CH1(PB6) PWM compare 값을 기록한다. 주기 틱 수를 넘는 값은 100% 듀티로 제한한다. */
 void r300_stm32_pwm_write(uint16_t compare)
 {
     R300_TIM4->CCR1 = compare > R300_MOTOR_PWM_PERIOD_TICKS ?
                       R300_MOTOR_PWM_PERIOD_TICKS : compare;
 }
 
+/* SysTick 기반 밀리초 카운터를 반환한다(약 49.7일마다 wrap, 시간 차는 uint32 뺄셈으로 비교). */
 uint32_t r300_stm32_millis(void)
 {
     return system_ms;

@@ -1,3 +1,6 @@
+# [테스트 설명] R300Application 이 수신 워커를 소유/정지하고, 잘못된 run 메타데이터와 UI 지연 설정을 거부하며, 대시보드 하트비트를 감독하는 동작을 지킨다.
+# 대상 소스: edge/r300_application.py (읽기 순서 11번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import json

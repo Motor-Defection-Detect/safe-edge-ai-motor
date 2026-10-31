@@ -1,3 +1,14 @@
+# ==============================================================================
+# edge/r300_dashboard.py
+# 역할: PyQt5 운영자 화면. DashboardStore 의 스냅샷을 100ms 마다 읽어 건강 상태, AI 조건, Safety 상태,
+#       메트릭, 파형/FFT, 이벤트 표로 그린다. 계산은 하지 않고 그리기만 한다(무거운 일은 워커가 끝낸 값).
+# 읽기 순서: 12/13 중 세 번째  (presenter -> dashboard_state -> 이 파일)
+# 다음에 볼 곳: edge/r300_demo.py — 이 화면과 전체 파이프라인을 합성 입력으로 실제로 돌려 보는 실행 파일
+# 관련: edge/r300_application.py (bind_dashboard 로 시그널 연결), edge/r300_dashboard_state.py (읽는 대상)
+# 핵심 설계: 화면에는 릴레이 권한이 없다. ARM 버튼은 advisory 요청 시그널만 내보내며 릴레이는 AVR 의 물리 ARM 으로만 켜진다.
+#            ui_heartbeat 시그널이 300ms 넘게 끊기면 Application 이 LINK_HEALTHY 를 끈다(UI 정지 = 애플리케이션 정지).
+# ==============================================================================
+
 """Qt operator dashboard for the software-only R300 runtime.
 
 The dashboard presents health and evidence; its ARM request signal is advisory.
@@ -20,6 +31,7 @@ from r300_dashboard_state import DashboardState, DashboardStore
 from r300_link import link_contract as lc
 
 
+# 위젯에 그릴 값 묶음. DashboardState 에서 파형/FFT/이벤트를 뺀 부분에, 화면에서 계산한 e2e p95 를 더한 메트릭이 들어간다. update_snapshot 의 입력.
 @dataclass(frozen=True)
 class DashboardSnapshot:
     health: Mapping[str, str]
@@ -32,6 +44,9 @@ class DashboardSnapshot:
     safety_detail: str = "AVR diagnostics unavailable"
 
 
+# 패널: System Health, AI Condition(advisory), Safety State(ARM 요청 버튼 포함), Metrics, 파형 + FFT 플롯, 이벤트 표.
+# 시그널: arm_requested(advisory), e2e_p95_updated(렌더 지연 p95), ui_heartbeat(갱신 때마다) - 뒤의 둘을 R300Application 이 받는다.
+# 다음: 실제 갱신 경로는 맨 아래 bind_store -> _refresh_store -> update_state 순서로 읽으면 된다.
 class R300Dashboard(QWidget):
     """Small, non-blocking status view updated by the receiver worker."""
 
@@ -39,6 +54,7 @@ class R300Dashboard(QWidget):
     e2e_p95_updated = pyqtSignal(float)
     ui_heartbeat = pyqtSignal()
 
+    # 위젯을 만들고 objectName 을 붙이는 구간(위)과 레이아웃으로 조립하는 구간(아래, health_layout 부터)으로 나뉜다.
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("R300 Condition Monitor")
@@ -77,6 +93,7 @@ class R300Dashboard(QWidget):
         self._waveform.addLegend()
         self._wave_curves = tuple(self._waveform.plot(name=name) for name in ("X", "Y", "Z"))
         for curve in self._wave_curves:
+            # peak 다운샘플링: 점이 화면 폭보다 많아도 피크를 보존한다(순간적인 충격성 진동이 사라지지 않게).
             curve.setDownsampling(auto=True, method="peak")
             curve.setClipToView(True)
         self._fft = pg.PlotWidget(title="FFT magnitude")
@@ -98,6 +115,7 @@ class R300Dashboard(QWidget):
         arm.setObjectName("arm_request")
         arm.clicked.connect(self.arm_requested)
 
+        # 여기부터 레이아웃 조립.
         health_layout = QGridLayout()
         for index, name in enumerate(("serial", "sensor", "ai", "avr", "motor")):
             health_layout.addWidget(QLabel(name.title()), 0, index)
@@ -149,6 +167,8 @@ class R300Dashboard(QWidget):
         layout.addWidget(self._events)
         self._refresh_timer: QTimer | None = None
 
+    # 스냅샷을 위젯 텍스트/색으로 반영한다. 조건이 NORMAL 이면 화면에는 MONITORING 으로 바꿔 표시한다.
+    # 투표 5칸: 비정상은 'A', 정상은 빈칸, 정보 없음(UNKNOWN)은 '-'.
     def update_snapshot(self, snapshot: DashboardSnapshot) -> None:
         self._health.setText(", ".join(f"{name}: {state}" for name, state in snapshot.health.items()))
         for name, label in self._health_labels.items():
@@ -176,6 +196,7 @@ class R300Dashboard(QWidget):
             value = snapshot.metrics.get(name)
             label.setText("N/A" if value is None else f"{value:.3g} {units[name]}")
 
+    # 상태 문자열 -> 배경색. safety=True 면 Safety 용 색표(ARMED 녹색 / TRIPPED 적색 / DISARMED 회색), 아니면 건강/AI 용. 표에 없는 값(UNKNOWN 등)은 회색.
     @staticmethod
     def _set_badge(label: QLabel, state: str, *, safety: bool = False) -> None:
         colors = ({"ARMED": "#16a34a", "TRIPPED": "#dc2626", "DISARMED": "#6b7280"}
@@ -184,6 +205,7 @@ class R300Dashboard(QWidget):
                                   "ERROR": "#dc2626", "STALE": "#6b7280"})
         label.setStyleSheet(f"color:white;background:{colors.get(state, '#6b7280')};padding:4px")
 
+    # 이벤트 표에 행 1개 추가. CONDITION 은 주황 '▲ AI', SAFETY 는 trip 이 들어 있으면 빨강 아니면 초록 '● Safety'. 200행을 넘으면 맨 위부터 삭제(store 와 같은 상한).
     def append_event(self, timestamp: str, message: str, category: str = "SYSTEM") -> None:
         timestamp_item = QStandardItem(timestamp)
         category_item = QStandardItem(
@@ -202,6 +224,9 @@ class R300Dashboard(QWidget):
         if self._event_model.rowCount() > 200:
             self._event_model.removeRow(0)
 
+    # store 스냅샷을 그린다(100ms 마다). 렌더 지연 e2e = 지금 - published_ns(패킷 수신 시각)이고, 최근 100개의 nearest-rank p95 를
+    # metrics['e2e_p95_ms'] 로 넣는다. 새 결과일 때만 e2e_p95_updated 를 emit 한다. 파형 시간축은 최신 샘플이 0 인 음수 초.
+    # 이벤트 표는 내용이 바뀐 경우에만 다시 만든다.
     def update_state(self, state: DashboardState) -> None:
         """Render worker-provided values only; no acquisition or FFT runs on the UI thread."""
         metrics = dict(state.metrics)
@@ -231,6 +256,7 @@ class R300Dashboard(QWidget):
                 self.append_event(event.timestamp, event.message, event.category)
             self._rendered_events = state.events
 
+    # store 를 주기적으로 읽는 QTimer 를 시작한다. 주기는 100~125ms(8~10Hz)만 허용하며 그 밖이면 ValueError.
     def bind_store(self, store: DashboardStore, interval_ms: int = 100) -> None:
         if not 100 <= interval_ms <= 125:
             raise ValueError("dashboard refresh must remain within the documented 8-10 Hz range")
@@ -238,11 +264,13 @@ class R300Dashboard(QWidget):
         self._refresh_timer.timeout.connect(lambda: self._refresh_store(store))
         self._refresh_timer.start(interval_ms)
 
+    # 한 번 그린 뒤 ui_heartbeat 를 emit 한다. Application 이 이 하트비트가 300ms 넘게 끊기면 LINK_HEALTHY 를 끈다.
     def _refresh_store(self, store: DashboardStore) -> None:
         self.update_state(store.snapshot())
         self.ui_heartbeat.emit()
 
 
+# 대시보드만 단독으로 띄운다(데이터가 없어 모든 상태가 UNKNOWN).
 def main() -> int:
     app = QApplication([])
     window = R300Dashboard()

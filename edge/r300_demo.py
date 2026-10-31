@@ -1,3 +1,14 @@
+# ==============================================================================
+# edge/r300_demo.py
+# 역할: 장치 없이 전체 Jetson 파이프라인(파서 -> 윈도우 -> 추론 -> 투표 -> 대시보드)을 합성 입력으로 실제로 돌려 보는
+#       실행 파일. 가짜 시리얼 포트(SyntheticSerial)가 계약에 맞는 TELEMETRY 프레임을 만들어 준다.
+# 읽기 순서: 13/13  (마지막. 앞: 12 presenter / dashboard_state / dashboard)
+# 다음에 볼 곳: 마지막 파일이다. 실제 장비 버전은 edge/r300_hardware.py 와 비교해 보고, 처음 흐름이 헷갈리면
+#               firmware/stm32/r300_protocol.c (1~6 중 프레임을 만드는 쪽)부터 다시 따라가 보면 좋다.
+# 관련: edge/r300_application.py (조립 루트), edge/r300_model.py (--model 로 연결되는 합성 모델)
+# 주의: 합성 입력/모델이라 하드웨어 또는 진단 근거가 아니다(창 제목과 로그 메모에도 그렇게 표시된다).
+# ==============================================================================
+
 """Run the real host pipeline and Qt dashboard with synthetic input."""
 from __future__ import annotations
 
@@ -13,6 +24,8 @@ from r300_link import InferenceResult
 from r300_link import link_contract as lc
 
 
+# SerialPort 프로토콜(read/write)을 만족하는 가짜 포트. 실제 STM32 대신 128ms 간격으로 TELEMETRY 프레임을 만든다.
+# write() 로 나가는 HEALTH / MOTOR_COMMAND 는 self.writes 에 쌓기만 한다. read 안의 sleep 이 '유한 타임아웃' 역할을 한다.
 class SyntheticSerial:
     """Finite-timeout serial stand-in that emits contract-valid 1 kHz blocks."""
 
@@ -22,6 +35,7 @@ class SyntheticSerial:
         self.writes: list[bytes] = []
         self._pending = b""
 
+    # 버퍼가 비면 프레임 1개를 만들고(간격만큼 sleep), 요청한 size 만큼만 잘라 돌려준다. 프레임이 size 보다 크면 여러 번에 나눠 반환한다.
     def read(self, size: int) -> bytes:
         if size <= 0:
             return b""
@@ -36,6 +50,8 @@ class SyntheticSerial:
         self.writes.append(bytes(data))
         return len(data)
 
+    # 사인파를 합성해 실제와 같은 경로로 프레임을 만든다: 시퀀스, 타임스탬프(us, uint32), 상태 플래그(SENSOR_READY),
+    # TELEMETRY_STRUCT.pack, CRC16. 샘플 인덱스 2048 이후에는 진폭을 키워 불균형 같은 변화를 흉내 낸다.
     def _frame(self) -> bytes:
         sequence = self.sequence
         timestamp_us = (sequence * lc.BLOCK_SAMPLES * 1_000_000 //
@@ -61,6 +77,8 @@ class SyntheticSerial:
         return body + struct.pack("<H", lc.crc16(body))
 
 
+# 처음 5회는 NORMAL(0.99), 이후는 UNBALANCE(0.95)를 돌려주는 시각화용 자극. 비정상 투표가 쌓여 ConditionVoter 가
+# WARNING 으로 바뀌는 과정을 화면에서 보게 해 준다. 진단 모델이 아니다.
 class SyntheticInference:
     """Deterministic visual stimulus, explicitly not a diagnostic model."""
 
@@ -73,6 +91,12 @@ class SyntheticInference:
                 InferenceResult("UNBALANCE", 0.95))
 
 
+# [구간 지도] main()
+#  1) 인자 파싱(--seconds, --screenshot, --model)
+#  2) (선택) 모델 로드 - --model 이 있으면 TorchInference 와 그 정규화 값을 사용, 없으면 모델 없는 자극
+#  3) R300Application 구성(가짜 포트 주입) + Qt 창에 바인딩 + 시작
+#  4) 타이머로 자동 종료/스크린샷, 종료 시 runtime.stop()
+# Qt 관련 import 는 main 안에서(지연 import) 한다.
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seconds", type=float, default=0.0,

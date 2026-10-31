@@ -1,3 +1,6 @@
+# [테스트 설명] Qt 대시보드가 워커가 준 스냅샷/파형/FFT를 그대로 그리고(직접 계산하지 않음) 무장 요청을 '권고'로만 내보내는지 지킨다.
+# 대상 소스: edge/r300_dashboard.py (읽기 순서 12번)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 from __future__ import annotations
 
 import sys

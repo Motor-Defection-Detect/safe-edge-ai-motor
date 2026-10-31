@@ -1,3 +1,7 @@
+/*
+ * 보드/센서 보정 상수(클럭, MPU-6050 설정, 모터 PWM, ACS712 전류 센서, 타임아웃)와 변환 함수 선언.
+ * 변환 함수 구현은 firmware/stm32/r300_board_config.c. 실측으로 확인해야 하는 값은 R300_HW_TUNE 주석으로 표시되어 있다.
+ */
 #ifndef R300_BOARD_CONFIG_H_
 #define R300_BOARD_CONFIG_H_
 

@@ -1,3 +1,6 @@
+/*
+ * AVR 런타임 상태 구조체와 init/step 선언. 구현은 firmware/avr/r300_avr_runtime.c.
+ */
 #ifndef R300_AVR_RUNTIME_H_
 #define R300_AVR_RUNTIME_H_
 
@@ -10,8 +13,10 @@ typedef struct {
     r300_safety_t safety;
     r300_debounce_t arm;
     r300_debounce_t estop;
+    /* 마지막으로 처리한 ISR 엣지 카운터 값 (새 엣지 발생 감지용) */
     uint8_t heartbeat_edges;
     uint8_t diagnostic_frame[R300_AVR_DIAGNOSTIC_BYTES];
+    /* 현재 프레임에서 이미 송신한 바이트 수 / 보낼 총 바이트 수(0이면 송신 중 아님) */
     uint8_t diagnostic_index;
     uint8_t diagnostic_bytes;
     uint32_t diagnostic_sequence;

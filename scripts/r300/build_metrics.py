@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# [보조 도구] 펌웨어 빌드 지표(경고 수, 코드 크기)를 '측정'해서 JSON으로 남긴다.
+# - 역할: -Werror 없이 모든 펌웨어 .c를 다시 컴파일해 경고 개수와 text 크기를 센다.
+# - 읽기 순서: 핵심 읽기 순서(1~13번) 밖의 보조 도구다. 펌웨어를 먼저 읽은 뒤에 봐도 된다.
+# - 다음에 볼 곳: firmware/avr/r300_safety.c (읽기 순서 1번) 와 firmware/stm32/*.c
+# - 주의: 크로스 컴파일러가 없으면 0을 보고하지 않고 SystemExit로 멈춘다(조용한 통과 방지).
 """Measure firmware build metrics instead of asserting them.
 
 `make firmware-logic` compiles with -Werror. This module recompiles every firmware
@@ -20,8 +25,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "build/metrics/firmware.json"
 
+# gcc 출력에서 ": warning:" 이 들어간 줄을 경고 1건으로 센다.
 WARNING = re.compile(r":\s*warning:", re.IGNORECASE)
 
+# 측정 대상 목록: 타깃별 컴파일러/플래그/인클루드 경로/소스 파일.
+# 새 .c 파일을 펌웨어에 추가하면 여기 sources에도 넣어야 지표에 반영된다.
 TARGETS = [
     {
         "name": "stm32",
@@ -45,6 +53,9 @@ TARGETS = [
 ]
 
 
+# 한 타깃(stm32 또는 avr)의 모든 소스를 -Wall -Wextra -Os로 컴파일한다.
+# 반환: (경고 수, 각 오브젝트 text 크기의 합). size 도구가 없으면 크기는 None.
+# 주의: 컴파일이 실패하면 지표를 쓰지 않고 바로 종료한다.
 def measure(target: dict[str, object], workdir: Path) -> tuple[int, int | None]:
     """Return (warning count, summed translation-unit text bytes)."""
     compiler = shutil.which(target["compiler"])
@@ -80,6 +91,8 @@ def measure(target: dict[str, object], workdir: Path) -> tuple[int, int | None]:
     return warnings, text_bytes
 
 
+# 두 타깃을 측정해 build/metrics/firmware.json 으로 저장하고 요약을 출력한다.
+# 최상위 'warnings' 키는 예산 게이트가 그대로 읽는다(중첩하지 않은 이유는 아래 주석 참고).
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)

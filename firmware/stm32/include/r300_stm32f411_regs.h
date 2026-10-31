@@ -1,3 +1,8 @@
+/*
+ * STM32F411 주변장치 레지스터 구조체와 베이스 주소 매크로(CMSIS 스타일 최소 집합). HAL 의존성을 없애기 위해
+ * 이 프로젝트에서 쓰는 레지스터만 정의한다. 사용처는 firmware/stm32/r300_stm32_platform.c. 값은 RM0383 기준이며
+ * 파일 끝의 _Static_assert가 구조체 레이아웃(오프셋)이 맞는지 컴파일 시 검사한다.
+ */
 #ifndef R300_STM32F411_REGS_H_
 #define R300_STM32F411_REGS_H_
 
@@ -73,6 +78,7 @@ typedef struct { volatile uint32_t CSR, RVR, CVR, CALIB; } r300_systick_regs_t;
 #define R300_NVIC ((r300_nvic_regs_t *)(uintptr_t)0xe000e100u)
 #define R300_SYSTICK ((r300_systick_regs_t *)(uintptr_t)0xe000e010u)
 
+/* 비트 번호를 마스크로 바꾸는 헬퍼 */
 #define R300_BIT(bit) (1u << (bit))
 
 _Static_assert(offsetof(r300_rcc_regs_t, AHB1ENR) == 0x30u, "RCC layout");

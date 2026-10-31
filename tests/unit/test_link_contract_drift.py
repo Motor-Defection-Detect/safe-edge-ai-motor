@@ -1,3 +1,6 @@
+# [테스트 설명] 생성 파일을 일부러 변조했을 때 validate(drift 검사)가 반드시 실패하는지 지킨다.
+# 대상 소스: scripts/r300/link_contract.py (생성기, 읽기 순서 밖의 고급 파일)
+# 읽는 법: 각 test_ 함수 이름이 곧 보호하는 동작이다. 소스를 먼저 읽고 오면 이해가 쉽다.
 """Host unit tier: the fail-closed behaviour of the link contract, proven by execution.
 
 The whole point of generating every consumer from one contract is that a

@@ -1,3 +1,7 @@
+// [설명] C 쪽 계약 값을 출력만 하는 작은 프로그램이다. 판정은 하지 않는다.
+// CRC-16 검사값, 샘플 프레임의 CRC, 프레임/상수 크기를 printf 로 찍고,
+// tests/integration/test_link_crosscheck.py 가 이를 컴파일/실행해 Python 계약 모듈의 값과 비교한다.
+// 대상 소스: firmware/*/include/r300_link.h (scripts/r300/link_contract.py 가 생성한 헤더)
 /* Boundary probe for the R300 link contract.
  *
  * Both firmware sides (STM32F411 and ATmega128A) consume the generated C header

@@ -1,4 +1,26 @@
 #!/usr/bin/env python3
+# [고급 읽기 - 첫 읽기에서는 건너뛰어도 된다] R300 링크 계약의 코드 생성기/검증기
+# 역할: contracts/r300-link.json (프레임 레이아웃, CRC, 타이밍, 핀맵의 단일 출처)을 읽어
+#       소비자 파일들을 생성하고, 손으로 고쳐서 어긋난(drift) 파일이 없는지 검사한다.
+# 읽기 순서: 핵심 읽기 순서(1~13번) 밖이다. 4번(r300_protocol.c)에서 r300_link.h 가 왜 생기는지
+#       궁금해졌을 때 이 파일로 오면 된다. 다음에 볼 곳: contracts/r300-link.json, edge/r300_link/runtime.py
+#
+# 구조 지도
+#   contracts/r300-link.json
+#      |-- structural_errors(): check_frames/pins/timing/acquisition/crc/states/flags 로 계약 자체를 검증
+#      `-- render(): consumers 목록의 kind 별로 텍스트를 만든다
+#            c-header      -> firmware/stm32/include/r300_link.h, firmware/avr/include/r300_link.h (2개)
+#            python-module -> edge/r300_link/link_contract.py
+#            markdown      -> docs/interface/r300-link.md
+#            csv           -> hardware/pinmap.generated.csv
+#   명령
+#      generate : 계약을 검증한 뒤 위 파일들을 다시 쓴다 (make generate-contract)
+#      validate : 파일을 쓰지 않고, 지금 있는 파일이 render() 결과와 글자 그대로 같은지 비교한다.
+#                 다르면 CONSUMER DRIFT 로 실패한다 (make contract 가 사용)
+#      digest / print : 계약의 SHA-256 / 정규화된 JSON 출력
+# 주의: 생성 파일 상단 배너에 계약 해시가 들어가고 validate 가 바이트 단위로 비교한다.
+#       그래서 render_* 함수가 내보내는 문자열은 한 글자만 바꿔도 모든 생성 파일이 바뀐다.
+#       생성 파일은 절대 직접 고치지 말고 계약 JSON을 고친 뒤 generate 를 실행한다.
 """Validate and generate the R300 cross-profile link contract.
 
 The STM32, the ATmega128A safety node, the Jetson receiver and the Qt dashboard
@@ -30,16 +52,20 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts/r300-link.json"
+# 생성 파일 배너에서 계약 해시 앞에 붙는 표지. validate 가 이 해시도 포함해 비교한다.
 DIGEST_MARKER = "r300-link-sha256:"
 
+# 계약의 필드 타입 이름 -> C 타입 / Python struct 포맷 문자 변환표 (생성 코드가 사용).
 C_TYPES = {"uint16": "uint16_t", "uint32": "uint32_t", "int16": "int16_t", "int16[]": "int16_t"}
 STRUCT_CODES = {"uint16": "H", "uint32": "I", "int16": "h"}
 
 
+# 계약 '내용'의 결함이 아니라 입력 자체를 쓸 수 없을 때(파일 없음, JSON 오류, 경로 탈출) 쓰는 예외.
 class ContractError(ValueError):
     """Raised for unusable input rather than for contract content defects."""
 
 
+# contracts/r300-link.json 을 읽어 dict로 반환한다. 파일이 없거나 JSON이 깨졌으면 ContractError.
 def load() -> dict[str, Any]:
     try:
         return json.loads(CONTRACT.read_text(encoding="utf-8"))
@@ -49,10 +75,12 @@ def load() -> dict[str, Any]:
         raise ContractError(f"invalid JSON in {CONTRACT} at line {exc.lineno}") from exc
 
 
+# 키 정렬 + 공백 제거한 JSON 문자열. 같은 계약이면 항상 같은 글자가 나와야 해시가 안정적이다.
 def canonical(contract: dict[str, Any]) -> str:
     return json.dumps(contract, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+# canonical() 문자열의 SHA-256. 생성 파일 배너와 수집 메타데이터의 contract_sha256 이 이 값이다.
 def digest(contract: dict[str, Any]) -> str:
     return hashlib.sha256(canonical(contract).encode("utf-8")).hexdigest()
 
@@ -61,6 +89,8 @@ def digest(contract: dict[str, Any]) -> str:
 # CRC. Implemented from the contract parameters so the generated C and Python
 # cannot drift apart, and self-checked against the published check value.
 # --------------------------------------------------------------------------
+# 계약의 CRC 파라미터(polynomial/init/xorOut)로 비트 단위 CRC-16을 계산한다. 입력: 바이트열, 출력: 16비트 정수.
+# 생성기 안에서 check_crc 가 표준 검사 문자열 "123456789" 결과와 계약의 checkValue 를 대조하는 데 쓴다.
 def crc16(data: bytes, spec: dict[str, Any]) -> int:
     poly = int(spec["polynomial"], 0)
     reg = int(spec["init"], 0)
@@ -74,6 +104,8 @@ def crc16(data: bytes, spec: dict[str, Any]) -> int:
 # --------------------------------------------------------------------------
 # Structural validation
 # --------------------------------------------------------------------------
+# 아래 check_* 함수들은 모두 '오류 문자열 목록'을 반환한다(빈 목록이면 통과).
+# 프레임 필드가 빈틈 없이 이어지는지, headerBytes/trailerBytes 가 필드 크기와 맞는지, crc16 필드가 있는지 본다.
 def check_frames(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for frame in contract["frames"]:
@@ -110,6 +142,7 @@ def check_frames(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 같은 보드의 같은 핀이 두 번 선언되지 않았는지, 신호의 양 끝 핀이 핀맵에 있는지 본다.
 def check_pins(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     seen: set[tuple[str, str]] = set()
@@ -189,6 +222,7 @@ def check_timing(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 샘플레이트 x 채널 x 2바이트 = UART 원시 전송량이 계약값과 맞고, 8N1 UART 용량(baud/10)에 들어가는지 본다.
 def check_acquisition(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     acq = contract["acquisition"]
@@ -222,6 +256,7 @@ def check_acquisition(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 선언된 CRC 파라미터가 표준 검사값(checkValue)을 실제로 만들어내는지 확인한다.
 def check_crc(contract: dict[str, Any]) -> list[str]:
     spec = contract["crc"]
     got = crc16(b"123456789", spec)
@@ -234,6 +269,7 @@ def check_crc(contract: dict[str, Any]) -> list[str]:
     return []
 
 
+# 모터 방향/안전 상태/트립 원인의 값이 중복되지 않는지, DISARMED와 TRIPPED가 릴레이 off 인지 본다.
 def check_states(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key in ("motorDirections", "safetyStates", "tripCauses"):
@@ -246,6 +282,7 @@ def check_states(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 상태 플래그의 이름/비트 위치가 유일하고 허용 비트 범위 안인지, 텔레메트리 상태 규칙이 비어있지 않은지 본다.
 def check_flags(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key, maximum_bit in (("healthFlags", 15), ("telemetryFlags", 7),
@@ -263,6 +300,7 @@ def check_flags(contract: dict[str, Any]) -> list[str]:
     return errors
 
 
+# 모든 check_* 결과를 합친다. generate 와 validate 가 둘 다 맨 먼저 호출한다.
 def structural_errors(contract: dict[str, Any]) -> list[str]:
     return (
         check_frames(contract)
@@ -278,6 +316,8 @@ def structural_errors(contract: dict[str, Any]) -> list[str]:
 # --------------------------------------------------------------------------
 # Consumer rendering
 # --------------------------------------------------------------------------
+# 생성 파일 맨 위에 붙는 4줄 배너(생성 파일 표시, 원본, 재생성 명령, 계약 해시). comment 는 파일 형식별 주석 기호.
+# 주의: 이 함수의 반환 문자열은 생성 파일에 그대로 들어간다.
 def banner(contract: dict[str, Any], comment: str) -> list[str]:
     return [
         f"{comment} GENERATED FILE - DO NOT EDIT.",
@@ -287,6 +327,9 @@ def banner(contract: dict[str, Any], comment: str) -> list[str]:
     ]
 
 
+# 아래 render_* 함수들은 계약 dict를 받아 해당 형식의 파일 전체 텍스트를 만든다.
+# 문자열 리터럴이 곧 생성 파일 내용이다(해시 비교 대상). 이 함수들의 문자열은 건드리지 않는다.
+# render_c_header: STM32/AVR 용 r300_link.h. guard 는 include guard 이름.
 def render_c_header(contract: dict[str, Any], guard: str) -> str:
     acq = contract["acquisition"]
     crc = contract["crc"]
@@ -401,6 +444,7 @@ def render_c_header(contract: dict[str, Any], guard: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+# render_python: Jetson 수신기와 Qt 대시보드가 import 하는 edge/r300_link/link_contract.py 를 만든다.
 def render_python(contract: dict[str, Any]) -> str:
     acq = contract["acquisition"]
     crc = contract["crc"]
@@ -505,6 +549,7 @@ def render_python(contract: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# render_markdown: 사람이 읽는 docs/interface/r300-link.md 를 만든다.
 def render_markdown(contract: dict[str, Any]) -> str:
     acq = contract["acquisition"]
     lines = banner(contract, "<!--")
@@ -623,6 +668,7 @@ def render_markdown(contract: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# render_csv: 배선 확인용 hardware/pinmap.generated.csv 를 만든다 (쉼표가 든 칸은 따옴표로 감쌈).
 def render_csv(contract: dict[str, Any]) -> str:
     lines = [line for line in banner(contract, "#")]
     lines.append("Board,Pin,Function,ConnectsTo,Level,Note")
@@ -632,6 +678,7 @@ def render_csv(contract: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# 소비자의 kind(c-header/python-module/markdown/csv)에 맞는 render_* 를 고른다. C 헤더는 경로로 보드별 guard 를 정한다.
 def render(contract: dict[str, Any], consumer: dict[str, Any]) -> str:
     kind = consumer["kind"]
     if kind == "c-header":
@@ -650,6 +697,7 @@ def render(contract: dict[str, Any], consumer: dict[str, Any]) -> str:
     raise ContractError(f"unknown consumer kind {kind!r}")
 
 
+# 계약에 적힌 상대 경로를 저장소 안의 절대 경로로 바꾼다. '..' 등으로 저장소 밖을 가리키면 ContractError.
 def inside_root(relative: str, root: Path = ROOT) -> Path:
     path = (root / relative).resolve()
     try:
@@ -659,6 +707,8 @@ def inside_root(relative: str, root: Path = ROOT) -> Path:
     return path
 
 
+# generate: 계약에 결함이 있으면 아무것도 쓰지 않고 1을 반환, 아니면 모든 소비자 파일을 덮어쓴다.
+# 계약을 바꾼 뒤 한 번 실행하는 명령이다 (make generate-contract).
 def cmd_generate(contract: dict[str, Any], root: Path = ROOT) -> int:
     errors = structural_errors(contract)
     if errors:
@@ -674,6 +724,8 @@ def cmd_generate(contract: dict[str, Any], root: Path = ROOT) -> int:
     return 0
 
 
+# validate(drift 검사): 파일을 쓰지 않는다. 계약 결함, 없는 소비자 파일, render() 결과와 다른 파일을 모아 출력한다.
+# 하나라도 있으면 1, 모두 같으면 PASS 와 0. make contract 가 이것을 실행한다.
 def cmd_validate(contract: dict[str, Any], root: Path = ROOT) -> int:
     errors = structural_errors(contract)
     drifted: list[str] = []
@@ -708,6 +760,7 @@ def cmd_validate(contract: dict[str, Any], root: Path = ROOT) -> int:
     return 0
 
 
+# 명령행 진입점: validate | generate | digest | print 중 하나를 실행한다. 계약 파일을 못 읽으면 종료 코드 2.
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["validate", "generate", "digest", "print"])

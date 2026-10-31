@@ -1,3 +1,6 @@
+/*
+ * AVR 진단 프레임 패킹 함수 선언. 구현은 firmware/avr/r300_avr_diagnostics.c.
+ */
 #ifndef R300_AVR_DIAGNOSTICS_H_
 #define R300_AVR_DIAGNOSTICS_H_
 
